@@ -1,5 +1,37 @@
-node_modules/
-.next/
+# General
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.sqlite3
+backup/
+new/
+old/
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*$py.class
 venv/
 .venv/
-backup/
+backend/venv/
+backend/.env
+backend/staticfiles/
+backend/media/
+backend/celerybeat-schedule
+backend/celerybeat.pid
+
+# Node / Next.js
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.pnpm-debug.log*
+
+# Docker
+.docker_data/
