@@ -1,7 +1,4 @@
 ## **Singapore SMB E-Commerce & Integrated Business Platform**
-### Version 1.0 - Final Synthesis Edition
-
----
 
 # DOCUMENT CONTROL
 
