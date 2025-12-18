@@ -10,25 +10,25 @@ dependencies = [
     "django-cors-headers>=4.3.1",
     "django-environ>=0.11.2",
     "django-allauth>=0.61.1",
-    "celery>=5.3.6",
-    "redis>=5.0.1",
-    "psycopg[binary]>=3.1.18",
+    "celery>=5.5.3",
+    "redis>=6.4.0",
+    "psycopg2-binary>=2.9.10",
     "gunicorn>=21.2.0",
-    "Pillow>=10.2.0",
+    "pillow>=11.3.0",
     "drf-spectacular>=0.27.1",  # For API Documentation
     "stripe>=8.4.0",            # Payment Processing
     "weasyprint>=61.0",         # Invoice PDF Generation
-    "python-jose[cryptography]>=3.3.0", # JWT Handling
-    "sentry-sdk>=1.40.0"        # Error Monitoring
+    "python-jose>=3.5.0", # JWT Handling
+    "sentry-sdk>=2.37.0"        # Error Monitoring
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0",
+    "pytest>=8.4.2",
     "pytest-django>=4.8.0",
-    "black>=24.2.0",
+    "black>=25.9.0",
     "isort>=5.13.2",
-    "flake8>=7.0.0",
+    "flake8>=7.3.0",
     "factory-boy>=3.3.0"
 ]
 
