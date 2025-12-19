@@ -20,6 +20,19 @@
 
 ---
 
+## Update Log
+
+- **2025-12-19**: Synced this deep understanding reference with latest QA-audit-driven schema/design updates.
+  - **GST**: Added historical GST rates table (`compliance.gst_rates`) and updated `calculate_gst(amount, gst_code, transaction_date)` to use historical lookup.
+  - **Orders**: Replaced race-prone order numbering with concurrency-safe per-company sequences (`core.sequences`) used by `generate_order_number(company_id)`.
+  - **Commerce**: Added cart persistence tables (`commerce.carts`, `commerce.cart_items`).
+  - **Compliance / InvoiceNow readiness**: Added PEPPOL operational tables (`compliance.peppol_invoices`, `compliance.peppol_acknowledgments`).
+  - **Accounting**: Replaced invalid default CoA seed with templates + initializer (`accounting.account_templates`, `initialize_company_accounts(company_id)`).
+  - **PDPA**: Clarified consent model as a dedicated table (`compliance.data_consents`) with 6 consent types.
+  - **Multi-tenancy**: Expanded RLS coverage and policies for newly added tables.
+
+---
+
 ## 1) WHAT we are building
 
 ### 1.1 Product pillars
@@ -101,7 +114,8 @@
   - Monetary fields use DECIMAL/`Decimal` (`DECIMAL(12,2)` typical)
 - **GST correctness**:
   - Codes: SR (standard rated), ZR (zero rated), ES (exempt), OS (out of scope)
-  - Current rate: 9% from 2024-01-01 (historical lookup required for backdated transactions)
+  - Current rate: 9% from 2024-01-01
+  - Historical lookup required for backdated transactions (rates stored in `compliance.gst_rates`; `calculate_gst(amount, gst_code, transaction_date)` uses effective-date lookup)
 - **Inventory correctness**:
   - Must be concurrency-safe (Redis locks + DB transactional integrity)
   - Prevent oversell; reservations expire and are cleaned up
@@ -184,24 +198,30 @@
   - GST registration fields
   - `settings` JSONB (e.g. order prefix)
 - `core.users` + RBAC tables `core.roles`, `core.user_roles`
+- `core.sequences`
+  - Per-company, concurrency-safe sequencing for document numbers (e.g. orders)
 
 ### 7.3 Commerce
 
 - `commerce.categories` (hierarchy via parent_id)
 - `commerce.products`
   - DECIMAL pricing
-  - `gst_code`, `gst_rate`
+  - `gst_code`, `gst_rate` (note: compliance-grade GST calculation must use `compliance.gst_rates` historical lookup)
   - `search_vector` generated tsvector with GIN index
   - `attributes` JSONB, `images` JSONB
 - `commerce.product_variants` (unique variant SKU)
 - `commerce.customers`
-  - PDPA consent fields + IP address
+  - Customer profile, B2B attributes, and audit fields
+  - PDPA consent is tracked in `compliance.data_consents` (multiple consent types over time)
   - B2B fields like `company_uen`, credit limits
+- `commerce.carts`, `commerce.cart_items`
+  - Cart persistence for anonymous sessions and logged-in customers
+  - Supports cart merge/convert flows; cart items are unique per `(cart_id, product_id, variant_id)`
 - `commerce.orders` (partitioned by `order_date`)
   - separate statuses: order/payment/fulfillment
   - monetary totals
   - addresses as JSONB
-- `commerce.order_items` references partitioned orders via `(order_id, order_date)` FK
+  - `commerce.order_items` references partitioned orders via `(order_id, order_date)` FK
 
 ### 7.4 Inventory
 
@@ -217,6 +237,10 @@
 ### 7.5 Accounting
 
 - `accounting.accounts` (CoA)
+- `accounting.account_templates`
+  - Seed templates used to initialize company-specific accounts (avoids invalid `NULL company_id` inserts)
+- `initialize_company_accounts(company_id)`
+  - Helper function to populate `accounting.accounts` per company
 - `accounting.journal_entries` with `balanced_entry` constraint
 - `accounting.journal_lines` with `one_side_only` constraint
 - `accounting.invoices` with computed `amount_due`
@@ -225,14 +249,19 @@
 ### 7.6 Compliance
 
 - `compliance.gst_returns` for F5 lifecycle
+- `compliance.gst_rates` for historical GST rates (effective-date lookup)
 - `compliance.data_consents`
+  - Consent type is normalized with 6 purposes: `marketing`, `analytics`, `third_party`, `profiling`, `order_processing`, `legal_compliance`
 - `compliance.data_access_requests` with due_date SLA
 - `compliance.audit_logs`
+- `compliance.peppol_invoices`, `compliance.peppol_acknowledgments`
+  - Operational storage for InvoiceNow/PEPPOL submission lifecycle and acknowledgments
 
 ### 7.7 RLS
 
 - RLS enabled for key tables and policies based on:
   - `current_setting('app.current_company_id')::UUID`
+  - Newly added tables are also covered, including carts, sequences, and PEPPOL operational tables
 
 ---
 

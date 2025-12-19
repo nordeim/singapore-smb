@@ -18,6 +18,16 @@
 
 ---
 
+## Update Log
+
+- **2025-12-19**: Synced PAD with QA-audit-driven schema/design updates.
+  - **GST**: Historical rates (`compliance.gst_rates`) and historical lookup in `calculate_gst(amount, gst_code, transaction_date)`.
+  - **Orders**: Concurrency-safe order numbering via per-company sequences (`core.sequences`) used by `generate_order_number(company_id)`.
+  - **Commerce**: Cart persistence (`commerce.carts`, `commerce.cart_items`).
+  - **InvoiceNow readiness**: PEPPOL operational tables (`compliance.peppol_invoices`, `compliance.peppol_acknowledgments`).
+  - **Accounting**: CoA seeding via templates + initializer (`accounting.account_templates`, `initialize_company_accounts(company_id)`).
+  - **Multi-tenancy**: Expanded RLS coverage/policies for the newly introduced tables.
+
 ## Table of Contents
 
 1. [Architecture Vision](#1-architecture-vision)
@@ -127,7 +137,7 @@ After deep analysis of the original PAD and PRD documents, I've re-imagined the 
               │                             │                             │
               ▼                             ▼                             ▼
     ┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
-    │  PostgreSQL 16  │          │   Redis 7.x     │          │   AWS S3        │
+    │  PostgreSQL 16  │          │   Redis 7.4+    │          │   AWS S3        │
     │  (RDS Multi-AZ) │          │  (ElastiCache)  │          │  (Media/Files)  │
     └─────────────────┘          └─────────────────┘          └─────────────────┘
 ```
@@ -326,6 +336,15 @@ See **Section 5.2** for the complete SQL schema file.
 6. **Computed Columns**: `net_qty` = `available_qty - reserved_qty`
 7. **Table Partitioning**: Orders partitioned by month for performance
 8. **Row-Level Security**: Multi-tenant data isolation
+
+### 5.3 QA-Audit-Driven Critical Schema Updates (Implemented)
+
+- **GST historical correctness**: `compliance.gst_rates` is the source-of-truth for effective-date GST rates; GST calculation uses `transaction_date` for backdated transactions.
+- **Order numbering safety**: `core.sequences` prevents race conditions during order-number generation under concurrent order creation.
+- **Cart persistence**: `commerce.carts` and `commerce.cart_items` support session carts, customer carts, merge, and conversion to orders.
+- **InvoiceNow readiness**: `compliance.peppol_invoices` and `compliance.peppol_acknowledgments` model the PEPPOL submission + ack lifecycle.
+- **CoA initialization**: `accounting.account_templates` and `initialize_company_accounts(company_id)` ensure per-company accounts without violating `NOT NULL` constraints.
+- **Multi-tenancy isolation**: RLS policies are extended to new tables (including join-based policies where `company_id` is indirect).
 
 ---
 

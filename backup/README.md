@@ -6,10 +6,10 @@
 ### *The All-in-One Commerce Solution for Singapore's Small & Medium Businesses*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?style=flat-square&logo=python)](https://www.python.org/)
-[![Django](https://img.shields.io/badge/Django-6.0+-green.svg?style=flat-square&logo=django)](https://www.djangoproject.com/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=flat-square&logo=python)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/Django-5.0+-green.svg?style=flat-square&logo=django)](https://www.djangoproject.com/)
 [![React](https://img.shields.io/badge/React-18+-61DAFB.svg?style=flat-square&logo=react)](https://reactjs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791.svg?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-24+-2496ED.svg?style=flat-square&logo=docker)](https://www.docker.com/)
 
 [![CI/CD](https://img.shields.io/github/workflow/status/singapore-smb/platform/CI?label=CI/CD&style=flat-square)](https://github.com/singapore-smb/platform/actions)
@@ -46,16 +46,6 @@
 - [💰 Sponsors](#-sponsors)
 - [📄 License](#-license)
 - [🙏 Acknowledgments](#-acknowledgments)
-
----
-
-## Update Log
-
-- **2025-12-19**: Synced README with QA-audit-driven architecture + schema updates.
-  - **Tech versions**: Python 3.12+, Django 6.0+, PostgreSQL 16+, Redis 7.4+.
-  - **Architecture**: Modular monolith (MVP) with Nginx/WAF at the edge; PostgreSQL tsvector for MVP search.
-  - **Async**: Hybrid background processing (Celery + Django Tasks) using Redis.
-  - **GST**: Documentation updated to reflect historical-rate-aware GST calculation (not hardcoded to a single rate).
 
 ---
 
@@ -174,7 +164,7 @@ Singapore SMBs struggle with:
 <details>
 <summary><b>Click to expand accounting features</b></summary>
 
-- ✅ **GST Compliance**: Historical-rate-aware GST calculation & IRAS filing
+- ✅ **GST Compliance**: Automatic 9% calculation & IRAS filing
 - ✅ **Real-Time P&L**: Live financial dashboards
 - ✅ **Bank Reconciliation**: Auto-match transactions
 - ✅ **Multi-Currency**: SGD, USD, MYR, EUR support
@@ -252,31 +242,31 @@ Singapore SMBs struggle with:
 ```mermaid
 graph TB
     subgraph "Frontend"
-        A[Next.js PWA]
+        A[React PWA]
         B[Mobile Apps]
         C[Admin Portal]
     end
     
-    subgraph "Edge"
-        D[Nginx + WAF]
+    subgraph "API Gateway"
+        D[Kong Gateway]
     end
     
-    subgraph "Backend (Modular Monolith)"
-        E[Django (DRF APIs)]
-        F[Django Admin]
-        G[Celery Workers]
-        H[Django Tasks]
+    subgraph "Microservices"
+        E[Commerce Service]
+        F[Inventory Service]
+        G[Accounting Service]
+        H[Payment Service]
     end
     
     subgraph "Data Layer"
-        I[(PostgreSQL 16+)]
-        J[(Redis 7.4+)]
-        K[(PostgreSQL tsvector)]
+        I[(PostgreSQL)]
+        J[(Redis)]
+        K[(Elasticsearch)]
     end
     
     subgraph "Infrastructure"
-        L[AWS ECS Fargate]
-        M[CloudFront CDN]
+        L[AWS EKS]
+        M[CloudFlare CDN]
     end
     
     A --> D
@@ -289,7 +279,6 @@ graph TB
     E --> I
     F --> I
     G --> I
-    G --> J
     H --> J
     E --> K
     
@@ -322,11 +311,11 @@ graph TB
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| ![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white) | **Python 3.12+** | Backend language |
-| ![Django](https://img.shields.io/badge/Django-092E20?style=flat-square&logo=django&logoColor=white) | **Django 6.0+** | Web framework |
+| ![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white) | **Python 3.11+** | Backend language |
+| ![Django](https://img.shields.io/badge/Django-092E20?style=flat-square&logo=django&logoColor=white) | **Django 5.0+** | Web framework |
 | ![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB) | **React 18+** | Frontend framework |
-| ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat-square&logo=postgresql&logoColor=white) | **PostgreSQL 16+** | Primary database |
-| ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white) | **Redis 7.4+** | Cache, locks & async |
+| ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat-square&logo=postgresql&logoColor=white) | **PostgreSQL 15+** | Primary database |
+| ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white) | **Redis 7.0+** | Cache & sessions |
 | ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white) | **Docker** | Containerization |
 | ![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat-square&logo=kubernetes&logoColor=white) | **Kubernetes** | Orchestration |
 | ![AWS](https://img.shields.io/badge/AWS-FF9900?style=flat-square&logo=amazon-aws&logoColor=white) | **AWS** | Cloud platform |
@@ -340,11 +329,10 @@ graph TB
 
 ```yaml
 Backend:
-  - Framework: Django 6.0+ with Django REST Framework
-  - Language: Python 3.12+
-  - Background: Celery + Django Tasks (hybrid)
-  - Broker/Cache/Locks: Redis
-  - WebSocket: Optional (post-MVP)
+  - Framework: Django 5.0+ with Django REST Framework
+  - Language: Python 3.11+
+  - Task Queue: Celery with RabbitMQ
+  - WebSocket: Django Channels
 
 Frontend:
   - Web: React 18+ with Next.js 14+
@@ -353,9 +341,10 @@ Frontend:
   - State: Redux Toolkit
 
 Databases:
-  - Primary: PostgreSQL 16+
-  - Cache/Locks/Broker: Redis 7.4+
-  - Search (MVP): PostgreSQL tsvector
+  - Primary: PostgreSQL 15+
+  - Cache: Redis 7.0+
+  - Search: Elasticsearch 8.10+
+  - Queue: RabbitMQ 3.12+
 
 DevOps:
   - Container: Docker 24+
@@ -387,11 +376,11 @@ Integrations:
 
 ```bash
 # Required tools
-- Python 3.12+
+- Python 3.11+
 - Node.js 18+
 - Docker 24+
-- PostgreSQL 16+
-- Redis 7.4+
+- PostgreSQL 15+
+- Redis 7.0+
 ```
 
 ### **30-Second Setup** 🚀
