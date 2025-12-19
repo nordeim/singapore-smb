@@ -2,7 +2,7 @@
 
 ## Executive Summary of Analysis
 
-I have completed a comprehensive review of all project documentation. This is a **unified business platform** targeting Singapore SMBs that merges three critical business functions into a single system, delivering **S$390K+ annual value per client** through automation and compliance.
+This is a **unified business platform** targeting Singapore SMBs that merges three critical business functions into a single system, delivering **S$390K+ annual value per client** through automation and compliance.
 
 My analysis reveals a **carefully architected solution** balancing MVP pragmatism with enterprise scalability, built on **Django 6.0+** backend with **Decimal-precision financials**, **Next.js 14+** PWA frontend, and **PostgreSQL 16** as the single source of truth. The architecture follows a **modular monolith** pattern that can evolve to microservices, with **Redis 7.4** providing distributed locks for inventory consistency.
 
@@ -361,10 +361,65 @@ Before Phase 1, complete these pre-requisites:
 
 This is a **high-impact, high-complexity** platform with **zero-margin-for-error** compliance requirements. The architecture is **sound and pragmatic**, balancing speed-to-market with scalability. The key to success is **rigorous testing** of financial calculations, **robust locking** for inventory, and **obsessive attention** to PDPA/GST details.
 
-I am prepared to proceed with **Phase 1 implementation** immediately upon your approval and answers to the validation questions.
+---
 
-**My commitment**: I will apply the Meticulous Approach framework to every coding task, providing deep analysis, systematic planning, and transparent communication throughout the 28-week journey.
+# **Update Review of Above:**
+
+This is an exceptional, high-level engineering assessment. You have not only validated the technical architecture but also identified critical **business-logic gaps** and **operational risks** that purely technical planning often overlooks.
+
+Here is my meticulous review of your assessment, highlighting discrepancies, agreements, and how we will integrate your insights into the execution plan.
+
+### 1. Assessment Comparison & Discrepancies
+
+| Area | My Initial Assessment | Your Assessment & Insight | **Verdict & Action** |
+| :--- | :--- | :--- | :--- |
+| **Async Architecture** | **Celery + Redis** as the primary engine for all background tasks. | **Django 6.0 Tasks** as a "Game-Changer" for lightweight tasks (PDFs, Emails) to reduce devops; Celery only for heavy lifting. | **Adopting Your Strategy.** We will lean on Django 6.0's native async tasks for the MVP to reduce infrastructure complexity. Celery will be reserved strictly for heavy marketplace syncs. |
+| **Testing Strategy** | Standard Unit, Integration, and E2E coverage. | **Property-Based Testing** (Hypothesis) specifically for the GST Engine. | **Critical Addition.** "Zero-error" GST cannot rely on example-based tests alone. I will add `hypothesis` to the test stack for Phase 4. |
+| **Inventory Conflict** | Technical locking via Redis (`available - reserved`). | **Business Logic Gap:** "What happens when Shopee and Storefront sell the last item?" (Allocation Strategy). | **Gap Acknowledged.** Redis locks prevent data corruption, but not customer disappointment. We need a **Channel Allocation Strategy** (e.g., buffer stock per channel) in Phase 3. |
+| **Multi-Tenancy** | Application-level isolation (Middleware + Custom Managers). | Queries **RLS (Row-Level Security)** vs. App-level. | **Clarification.** For MVP (Phase 1), we will stick to **Application-Level (Middleware)** to maintain development velocity. RLS adds significant complexity to migrations and testing and will be deferred to a hardening phase. |
+| **IRAS Integration** | "Stubs" for Phase 2. | **Strategic Risk:** Without real API access, the "Automated Filing" value prop is unproven. | **Risk Accepted.** We will build the **GST Engine** (Logic) first. The **Submission Layer** will use a strict Interface pattern so the specific API implementation can be swapped when access is granted. |
+
+### 2. Deep Dive on Your Identified Gaps
+
+You correctly identified several "Blind Spots" in the original PRD/Architecture. Here is how I will address them in the implementation:
+
+#### High Priority Gaps
+*   **Marketplace Conflict Resolution**: You asked for the logic.
+    *   *Solution*: We will implement a **"Strict FIFO + Reservation"** model.
+    *   *Logic*: When an order arrives from *any* source, it attempts to acquire a Redis lock. If successful, it creates a `InventoryReservation` (expires in 30m). If Shopee sends an order and the lock fails (stock 0), we reject the webhook or trigger a "Cancel Order" API call back to Shopee immediately.
+*   **PayNow QR Expiry**:
+    *   *Solution*: We will implement a **Django Task** scheduled for `created_at + 30min`.
+    *   *Logic*: If `status == 'pending'`, transition to `cancelled` and release `InventoryReservation`.
+*   **Data Retention Automation (PDPA)**:
+    *   *Solution*: A daily **Django Beat Task**.
+    *   *Logic*: `DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL '7 years'`. For customer data, we will perform a "Soft Anonymization" (scramble PII, keep stats) rather than hard delete, to preserve analytics.
+
+#### Medium Priority Gaps
+*   **InvoiceNow Key Management**:
+    *   *Solution*: We will not store private keys in the codebase. We will use **Environment Variables** (injected via AWS Secrets Manager in prod) for the MVP, with a roadmap to use a dedicated HSM or KMS signing service later.
+
+### 3. Integration of Your Recommendations
+
+I am integrating your strategic recommendations into the **Standard Operating Procedure**:
+
+1.  **Feature Flags (`django-waffle`)**: Added to Phase 1 requirements. We will wrap the "PayNow" and "Marketplace Sync" features in flags to allow safe production testing.
+2.  **Performance Budgets**: Added to CI/CD pipeline.
+    *   Backend: `pytest-benchmark` will fail builds if critical paths (Calculation) exceed 100ms.
+    *   Frontend: `bundlesize` check in GitHub Actions.
+3.  **API Versioning**: We will strictly adhere to the `/api/v1/` namespace and document the deprecation policy in the `README.md`.
+
+---
+
+### 4. Revised Phase 1 Execution Plan
+
+Based on your review, I have refined the **Phase 1 (Foundation)** plan.
+
+**Adjustments:**
+*   **Added**: `django-waffle` for feature flags.
+*   **Refined**: `celery.py` setup will be minimal; `django_tasks` app will be added.
+*   **Refined**: `tests` will include a `conftest.py` setup ready for `hypothesis`.
 
 ---
 
 https://www.kimi.com/share/19b3453d-6352-809a-8000-000035a8db3b  
+https://business.gemini.google/home/cid/61d46f46-4a8f-4a34-bee7-4ccc51dae0e1/r/share/eec8a2e4-71bd-4e81-837a-423efc2132c5?csesidx=1093196194&mods=  
