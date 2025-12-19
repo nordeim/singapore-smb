@@ -744,10 +744,7 @@ git push origin feature/amazing-feature
 <!-- ALL-CONTRIBUTORS-LIST:START -->
 <table>
 <tr>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/1?s=100" width="100px;" alt=""/><br /><sub><b>John Doe</b></sub></td>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/2?s=100" width="100px;" alt=""/><br /><sub><b>Jane Smith</b></sub></td>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/3?s=100" width="100px;" alt=""/><br /><sub><b>Bob Johnson</b></sub></td>
-<td align="center"><img src="https://avatars.githubusercontent.com/u/4?s=100" width="100px;" alt=""/><br /><sub><b>Alice Wong</b></sub></td>
+<td align="center"><img src="https://avatars.githubusercontent.com/u/1?s=100" width="100px;" alt=""/><br /><sub><b>John Lee</b></sub></td>
 </tr>
 </table>
 <!-- ALL-CONTRIBUTORS-LIST:END -->
