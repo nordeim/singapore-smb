@@ -165,24 +165,6 @@ class Customer:
 /api/v1/gst/f5-preparation/
 ```
 
-### Django 6.0 Security (CSP)
-
-```python
-# Django 6.0 built-in Content Security Policy (CSP)
-# Configure in settings (e.g. `backend/config/csp.py`) and enable middleware.
-
-SECURE_CSP = {
-    "default-src": ["'self'"],
-    "script-src": ["'self'", "'nonce-{request.csp_nonce}'", "https://js.stripe.com"],
-    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-    "img-src": ["'self'", "https://*.cloudfront.net", "data:", "blob:"],
-    "connect-src": ["'self'", "https://api.stripe.com", "https://api.hit-pay.com"],
-    "frame-src": ["https://js.stripe.com", "https://paynow.sg"],
-    "font-src": ["'self'", "https://fonts.gstatic.com"],
-    "report-uri": "/api/v1/csp-report/",
-}
-```
-
 ---
 
 ## 🔧 Key Integrations

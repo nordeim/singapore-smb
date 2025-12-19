@@ -118,18 +118,6 @@ CREATE TABLE core.user_roles (
     PRIMARY KEY (user_id, role_id)
 );
 
--- Sequences (Thread-safe numbering per company)
-CREATE TABLE core.sequences (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES core.companies(id),
-    sequence_type VARCHAR(50) NOT NULL,
-    prefix VARCHAR(20),
-    current_value BIGINT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(company_id, sequence_type)
-);
-
 -- ============================================================================
 -- COMMERCE SCHEMA - E-commerce entities
 -- ============================================================================
@@ -337,41 +325,6 @@ CREATE TABLE commerce.customer_addresses (
 );
 
 CREATE INDEX idx_addresses_customer ON commerce.customer_addresses(customer_id);
-
--- Shopping Carts
-CREATE TABLE commerce.carts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES core.companies(id),
-    customer_id UUID REFERENCES commerce.customers(id),
-    session_id VARCHAR(100),
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'merged', 'converted', 'abandoned')),
-    expires_at TIMESTAMPTZ NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '7 days'),
-    converted_order_id UUID,
-    converted_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ,
-    CONSTRAINT cart_identifier CHECK (customer_id IS NOT NULL OR session_id IS NOT NULL)
-);
-
-CREATE TABLE commerce.cart_items (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    cart_id UUID NOT NULL REFERENCES commerce.carts(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES commerce.products(id),
-    variant_id UUID REFERENCES commerce.product_variants(id),
-    quantity INTEGER NOT NULL CHECK (quantity > 0),
-    unit_price DECIMAL(10,2) NOT NULL,
-    is_saved_for_later BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(cart_id, product_id, variant_id)
-);
-
-CREATE INDEX idx_carts_company ON commerce.carts(company_id);
-CREATE INDEX idx_carts_customer ON commerce.carts(customer_id);
-CREATE INDEX idx_carts_session ON commerce.carts(session_id) WHERE session_id IS NOT NULL;
-CREATE INDEX idx_carts_expires ON commerce.carts(expires_at) WHERE status = 'active';
-CREATE INDEX idx_cart_items_cart ON commerce.cart_items(cart_id);
 
 -- Orders (Partitioned by month)
 CREATE TABLE commerce.orders (
@@ -821,27 +774,9 @@ CREATE TABLE accounting.payments (
 CREATE INDEX idx_payments_company ON accounting.payments(company_id);
 CREATE INDEX idx_payments_reference ON accounting.payments(reference_type, reference_id);
 
--- ==========================================================================
+-- ============================================================================
 -- COMPLIANCE SCHEMA
--- ==========================================================================
-
--- GST Rates (Historical)
-CREATE TABLE compliance.gst_rates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    effective_date DATE NOT NULL,
-    rate DECIMAL(5,4) NOT NULL,
-    description VARCHAR(100),
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(effective_date)
-);
-
-INSERT INTO compliance.gst_rates (effective_date, rate, description) VALUES
-('1994-04-01', 0.03, 'GST introduction'),
-('2003-01-01', 0.04, 'Increase to 4%'),
-('2004-01-01', 0.05, 'Increase to 5%'),
-('2007-07-01', 0.07, 'Increase to 7%'),
-('2023-01-01', 0.08, 'Increase to 8%'),
-('2024-01-01', 0.09, 'Increase to 9% (current)');
+-- ============================================================================
 
 -- GST F5 Returns
 CREATE TABLE compliance.gst_returns (
@@ -883,47 +818,6 @@ CREATE TABLE compliance.gst_returns (
 CREATE INDEX idx_gst_returns_company ON compliance.gst_returns(company_id);
 CREATE INDEX idx_gst_returns_status ON compliance.gst_returns(status);
 
--- PEPPOL Invoices
-CREATE TABLE compliance.peppol_invoices (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID NOT NULL REFERENCES core.companies(id),
-    invoice_id UUID NOT NULL REFERENCES accounting.invoices(id),
-    peppol_id VARCHAR(100) UNIQUE,
-    sender_endpoint VARCHAR(50) NOT NULL,
-    receiver_endpoint VARCHAR(50),
-    document_type VARCHAR(10) DEFAULT '380',
-    ubl_version VARCHAR(10) DEFAULT '2.1',
-    customization_id VARCHAR(100) DEFAULT 'urn:cen.eu:en16931:2017#conformant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0',
-    status VARCHAR(20) DEFAULT 'draft' CHECK (status IN (
-        'draft', 'validated', 'signed', 'submitted', 'acknowledged', 'rejected', 'failed'
-    )),
-    submitted_at TIMESTAMPTZ,
-    access_point_provider VARCHAR(100),
-    submission_reference VARCHAR(100),
-    acknowledged_at TIMESTAMPTZ,
-    acknowledgment_code VARCHAR(20),
-    rejection_reason TEXT,
-    xml_document TEXT,
-    signature_value TEXT,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMPTZ
-);
-
-CREATE TABLE compliance.peppol_acknowledgments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    peppol_invoice_id UUID NOT NULL REFERENCES compliance.peppol_invoices(id) ON DELETE CASCADE,
-    message_id VARCHAR(100) NOT NULL,
-    status_code VARCHAR(20) NOT NULL,
-    status_description TEXT,
-    raw_response JSONB,
-    received_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_peppol_invoices_company ON compliance.peppol_invoices(company_id);
-CREATE INDEX idx_peppol_invoices_status ON compliance.peppol_invoices(status);
-CREATE INDEX idx_peppol_acks_invoice ON compliance.peppol_acknowledgments(peppol_invoice_id);
-
 -- PDPA Data Consents
 CREATE TABLE compliance.data_consents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -931,12 +825,7 @@ CREATE TABLE compliance.data_consents (
     
     -- Consent Type
     consent_type VARCHAR(50) NOT NULL CHECK (consent_type IN (
-        'order_processing',
-        'marketing',
-        'analytics',
-        'third_party',
-        'profiling',
-        'legal_compliance'
+        'marketing', 'analytics', 'third_party', 'profiling'
     )),
     
     -- Status
@@ -1038,15 +927,6 @@ CREATE TRIGGER update_customers_timestamp BEFORE UPDATE ON commerce.customers
 CREATE TRIGGER update_inventory_timestamp BEFORE UPDATE ON inventory.items
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
-CREATE TRIGGER update_sequences_timestamp BEFORE UPDATE ON core.sequences
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER update_carts_timestamp BEFORE UPDATE ON commerce.carts
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER update_cart_items_timestamp BEFORE UPDATE ON commerce.cart_items
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER update_peppol_invoices_timestamp BEFORE UPDATE ON compliance.peppol_invoices
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
 -- Inventory movement audit trigger
 CREATE OR REPLACE FUNCTION log_inventory_change()
 RETURNS TRIGGER AS $$
@@ -1076,95 +956,56 @@ CREATE TRIGGER audit_inventory_changes AFTER UPDATE ON inventory.items
 -- Calculate GST amount
 CREATE OR REPLACE FUNCTION calculate_gst(
     amount DECIMAL(12,2),
-    gst_code VARCHAR(2),
-    transaction_date DATE DEFAULT CURRENT_DATE
+    gst_code VARCHAR(2)
 ) RETURNS DECIMAL(12,2) AS $$
-DECLARE
-    gst_rate DECIMAL(5,4);
 BEGIN
-    IF gst_code != 'SR' THEN
+    IF gst_code = 'SR' THEN
+        RETURN ROUND(amount * 0.09, 2);
+    ELSE
         RETURN 0;
     END IF;
-
-    SELECT rate INTO gst_rate
-    FROM compliance.gst_rates
-    WHERE effective_date <= transaction_date
-    ORDER BY effective_date DESC
-    LIMIT 1;
-
-    RETURN ROUND(amount * COALESCE(gst_rate, 0.09), 2);
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$ LANGUAGE plpgsql IMMUTABLE;
 
 -- Generate order number
-CREATE OR REPLACE FUNCTION generate_order_number(p_company_id UUID)
+CREATE OR REPLACE FUNCTION generate_order_number(company_id UUID)
 RETURNS VARCHAR(50) AS $$
 DECLARE
-    v_prefix VARCHAR(20);
-    v_seq_num BIGINT;
+    prefix VARCHAR(10);
+    seq_num INTEGER;
 BEGIN
-    UPDATE core.sequences
-    SET current_value = current_value + 1
-    WHERE company_id = p_company_id AND sequence_type = 'order'
-    RETURNING current_value, prefix INTO v_seq_num, v_prefix;
-
-    IF v_seq_num IS NULL THEN
-        INSERT INTO core.sequences (company_id, sequence_type, prefix, current_value)
-        VALUES (p_company_id, 'order', 'ORD', 1)
-        ON CONFLICT (company_id, sequence_type)
-        DO UPDATE SET current_value = core.sequences.current_value + 1
-        RETURNING current_value, prefix INTO v_seq_num, v_prefix;
-    END IF;
-
-    RETURN COALESCE(v_prefix, 'ORD') || '-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' || LPAD(v_seq_num::TEXT, 6, '0');
+    SELECT COALESCE(settings->>'order_prefix', 'ORD') INTO prefix
+    FROM core.companies WHERE id = company_id;
+    
+    SELECT COUNT(*) + 1 INTO seq_num
+    FROM commerce.orders o WHERE o.company_id = generate_order_number.company_id;
+    
+    RETURN prefix || '-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' || LPAD(seq_num::TEXT, 6, '0');
 END;
 $$ LANGUAGE plpgsql;
 
--- ==========================================================================
+-- ============================================================================
 -- DEFAULT DATA
--- ==========================================================================
+-- ============================================================================
 
--- Default Chart of Accounts (Singapore) - Templates
-CREATE TABLE accounting.account_templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code VARCHAR(20) NOT NULL UNIQUE,
-    name VARCHAR(100) NOT NULL,
-    account_type VARCHAR(20) NOT NULL,
-    account_subtype VARCHAR(50),
-    gst_code VARCHAR(2),
-    description TEXT,
-    is_required BOOLEAN DEFAULT FALSE
-);
-
-INSERT INTO accounting.account_templates (code, name, account_type, account_subtype, is_required) VALUES
-('1000', 'Cash and Bank', 'asset', 'current', TRUE),
-('1100', 'Accounts Receivable', 'asset', 'current', TRUE),
-('1200', 'Inventory', 'asset', 'current', TRUE),
-('2000', 'Accounts Payable', 'liability', 'current', TRUE),
-('2100', 'GST Payable', 'liability', 'current', TRUE),
-('2200', 'GST Receivable', 'asset', 'current', TRUE),
-('3000', 'Share Capital', 'equity', 'capital', TRUE),
-('3100', 'Retained Earnings', 'equity', 'retained', TRUE),
-('4000', 'Sales Revenue', 'revenue', 'operating', TRUE),
-('4100', 'Export Sales', 'revenue', 'operating', FALSE),
-('5000', 'Cost of Goods Sold', 'expense', 'cogs', TRUE),
-('6000', 'Operating Expenses', 'expense', 'operating', TRUE),
-('6100', 'Salaries and Wages', 'expense', 'operating', FALSE),
-('6200', 'Rent Expense', 'expense', 'operating', FALSE);
-
-CREATE OR REPLACE FUNCTION initialize_company_accounts(p_company_id UUID)
-RETURNS INTEGER AS $$
-DECLARE
-    v_count INTEGER;
-BEGIN
-    INSERT INTO accounting.accounts (company_id, code, name, account_type, account_subtype, is_system)
-    SELECT p_company_id, code, name, account_type, account_subtype, TRUE
-    FROM accounting.account_templates;
-
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    RETURN v_count;
-END;
-$$ LANGUAGE plpgsql;
+-- Default Chart of Accounts (Singapore)
+INSERT INTO accounting.accounts (company_id, code, name, account_type, account_subtype, is_system) VALUES
+-- This will be populated per company on creation
+-- Template accounts:
+(NULL, '1000', 'Cash and Bank', 'asset', 'current', TRUE),
+(NULL, '1100', 'Accounts Receivable', 'asset', 'current', TRUE),
+(NULL, '1200', 'Inventory', 'asset', 'current', TRUE),
+(NULL, '2000', 'Accounts Payable', 'liability', 'current', TRUE),
+(NULL, '2100', 'GST Payable', 'liability', 'current', TRUE),
+(NULL, '2200', 'GST Receivable', 'asset', 'current', TRUE),
+(NULL, '3000', 'Share Capital', 'equity', 'capital', TRUE),
+(NULL, '3100', 'Retained Earnings', 'equity', 'retained', TRUE),
+(NULL, '4000', 'Sales Revenue', 'revenue', 'operating', TRUE),
+(NULL, '4100', 'Export Sales', 'revenue', 'operating', TRUE),
+(NULL, '5000', 'Cost of Goods Sold', 'expense', 'cogs', TRUE),
+(NULL, '6000', 'Operating Expenses', 'expense', 'operating', TRUE),
+(NULL, '6100', 'Salaries and Wages', 'expense', 'operating', TRUE),
+(NULL, '6200', 'Rent Expense', 'expense', 'operating', TRUE);
 
 -- ============================================================================
 -- VIEWS
@@ -1213,13 +1054,6 @@ ALTER TABLE commerce.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commerce.customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory.items ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE core.sequences ENABLE ROW LEVEL SECURITY;
-ALTER TABLE commerce.carts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE commerce.cart_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.gst_returns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.peppol_invoices ENABLE ROW LEVEL SECURITY;
-ALTER TABLE compliance.peppol_acknowledgments ENABLE ROW LEVEL SECURITY;
-
 -- Create policies (companies can only see their own data)
 CREATE POLICY company_isolation_products ON commerce.products
     USING (company_id = current_setting('app.current_company_id')::UUID);
@@ -1232,38 +1066,6 @@ CREATE POLICY company_isolation_customers ON commerce.customers
 
 CREATE POLICY company_isolation_inventory ON inventory.items
     USING (company_id = current_setting('app.current_company_id')::UUID);
-
-CREATE POLICY company_isolation_sequences ON core.sequences
-    USING (company_id = current_setting('app.current_company_id')::UUID);
-
-CREATE POLICY company_isolation_carts ON commerce.carts
-    USING (company_id = current_setting('app.current_company_id')::UUID);
-
-CREATE POLICY company_isolation_cart_items ON commerce.cart_items
-    USING (
-        EXISTS (
-            SELECT 1
-            FROM commerce.carts c
-            WHERE c.id = cart_id
-              AND c.company_id = current_setting('app.current_company_id')::UUID
-        )
-    );
-
-CREATE POLICY company_isolation_gst_returns ON compliance.gst_returns
-    USING (company_id = current_setting('app.current_company_id')::UUID);
-
-CREATE POLICY company_isolation_peppol_invoices ON compliance.peppol_invoices
-    USING (company_id = current_setting('app.current_company_id')::UUID);
-
-CREATE POLICY company_isolation_peppol_acknowledgments ON compliance.peppol_acknowledgments
-    USING (
-        EXISTS (
-            SELECT 1
-            FROM compliance.peppol_invoices pi
-            WHERE pi.id = peppol_invoice_id
-              AND pi.company_id = current_setting('app.current_company_id')::UUID
-        )
-    );
 
 -- ============================================================================
 -- GRANTS

@@ -36,7 +36,6 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 ### 1.2 Why It Matters
 
 **Quantified Value per SMB:**
-
 - **S$390,000+** annual savings/revenue lift
 - **60%** reduction in manual processes
 - **100%** GST compliance (vs 3.2 errors/quarter average)
@@ -74,14 +73,12 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 ### 2.3 User Personas
 
 #### Primary: Sarah Chen (SMB Owner)
-
 - **Profile**: Fashion retailer, S$1.8M revenue, 12 employees
 - **Pain Points**: Manual reconciliation (2hrs/day), GST filing (3 days/quarter)
 - **Goals**: Unified dashboard, zero GST penalties, scale to S$5M
 - **Platform Mode**: STANDARD (upgrade path to ADVANCED)
 
 #### Secondary Personas
-
 - **David Wong (Finance Manager)**: Needs automated journals, 1-day month-end close
 - **Priya Sharma (Operations Manager)**: Needs <5 min inventory sync, barcode scanning
 - **Emma Tan (End Customer)**: Mobile-first, <2s load time, cart persistence
@@ -107,7 +104,7 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 
 ### 3.2 High-Level Architecture Diagram
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              CLIENT LAYER                                    │
 ├─────────────────┬─────────────────┬─────────────────────────────────────────┤
@@ -125,15 +122,15 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         APPLICATION LAYER                                    │
 ├─────────────────┬─────────────────┬─────────────────────────────────────────┤
-│  Django 6.x     │  Celery Workers │     (Optional) Django Channels          │
-│  (DRF APIs)     │  (Async Tasks)  │     (WebSockets, post-MVP)              │
+│  Django 5.x     │  Celery Workers │         Django Channels                 │
+│  (DRF APIs)     │  (Async Tasks)  │         (WebSockets)                    │
 └────────┬────────┴────────┬────────┴──────────────────┬──────────────────────┘
          │                 │                           │
          ▼                 ▼                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           DATA LAYER                                         │
 ├─────────────────┬─────────────────┬─────────────────────────────────────────┤
-│  PostgreSQL 16  │   Redis 7.4+    │         S3 (Media)                      │
+│  PostgreSQL 15  │   Redis 7.x     │         S3 (Media)                      │
 │  (Primary DB)   │   (Cache/Queue) │         (File Storage)                  │
 └─────────────────┴─────────────────┴─────────────────────────────────────────┘
 
@@ -159,7 +156,7 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 
 ### 4.1 Entity Relationship Overview
 
-```text
+```
 ┌─────────┐       ┌─────────┐       ┌─────────────┐
 │ Company │──────<│ Product │──────<│ InventoryItem│
 └─────────┘       └─────────┘       └─────────────┘
@@ -394,7 +391,6 @@ def generate_paynow_qr(amount: Decimal, reference: str) -> str:
 ### 7.2 Phase 1 Breakdown (Foundation)
 
 #### Sprint 1-2: Infrastructure Setup
-
 - [ ] AWS VPC, subnets, security groups
 - [ ] Docker Compose for local development
 - [ ] CI/CD pipeline (GitHub Actions)
@@ -402,7 +398,6 @@ def generate_paynow_qr(amount: Decimal, reference: str) -> str:
 - [ ] Redis cluster setup
 
 #### Sprint 3-4: Core Models & Admin
-
 - [ ] Company model with GST registration
 - [ ] Product model with GST codes
 - [ ] Customer model with PDPA fields
@@ -410,7 +405,6 @@ def generate_paynow_qr(amount: Decimal, reference: str) -> str:
 - [ ] Django Admin customization (Jazzmin)
 
 #### Sprint 5-6: Authentication & API Foundation
-
 - [ ] Django-allauth integration
 - [ ] JWT token system (DRF SimpleJWT)
 - [ ] RBAC permission system
