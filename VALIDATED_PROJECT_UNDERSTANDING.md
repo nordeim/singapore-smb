@@ -2,8 +2,9 @@
 
 > **Document Type**: AI Agent Reference Document  
 > **Created**: December 19, 2025  
+> **Last Updated**: December 19, 2025 (Phase 1 Remediation)  
 > **Purpose**: Comprehensive validated understanding of WHAT, WHY, and HOW for AI coding agent task alignment  
-> **Validation Status**: ✅ Phase 1 Codebase Validated
+> **Validation Status**: ✅ Phase 1 Codebase Validated + Remediated (61 tests passing)
 
 ---
 
@@ -204,9 +205,9 @@ calculate_gst(amount, gst_code, transaction_date)
     → Queries compliance.gst_rates for effective_date <= transaction_date
     → Returns ROUND(amount * rate, 2) for SR, else 0
 
-# GST Codes
-SR = 'Standard Rated (9%)'  # Local sales
-ZR = 'Zero Rated (0%)'      # Exports
+# GST Codes (labels do NOT embed rate — configurable via GST_DEFAULT_RATE)
+SR = 'Standard Rated'       # Local sales (rate from compliance.gst_rates)
+ZR = 'Zero Rated'           # Exports (0%)
 ES = 'Exempt Supply'        # Financial services
 OS = 'Out of Scope'         # Overseas services
 ```
@@ -256,6 +257,39 @@ OS = 'Out of Scope'         # Overseas services
 | Accounts app URLs | [apps/accounts/urls.py](file:///home/project/singapore-smb/backend/apps/accounts/urls.py) | ✅ |
 | Accounts app tests | `apps/accounts/tests/` | ✅ |
 | Environment files | [.env.example](file:///home/project/singapore-smb/backend/.env.example) | ✅ |
+| Seed management command | [apps/accounts/management/commands/seed.py](file:///home/project/singapore-smb/backend/apps/accounts/management/commands/seed.py) | ✅ |
+| Docker Compose | [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml) | ✅ |
+| Migration/seed scripts | `docker/scripts/*.sh` | ✅ |
+
+### 4.3 Phase 1 Remediation Summary (Validated)
+
+> **Reference**: [Phase1_remediation_plan_audit_log.md](file:///home/project/singapore-smb/Phase1_remediation_plan_audit_log.md)  
+> **Verification**: All 61 tests passing, `manage.py check` clean
+
+Phase 1 underwent remediation to align with latest design specs and ensure end-to-end runnability:
+
+| Category | Change | Files Modified |
+|----------|--------|----------------|
+| **Docker Dev Environment** | Added [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml) with `postgres:16-alpine` and `redis:7.4-alpine`, healthchecks, named volumes | [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml), `.env.docker` |
+| **Seed Command** | Added `manage.py seed` for idempotent baseline data (company, roles, owner) | [apps/accounts/management/commands/seed.py](file:///home/project/singapore-smb/backend/apps/accounts/management/commands/seed.py) |
+| **Admin Inline Fix** | Added `fk_name = 'user'` to `UserRoleInline` to resolve `admin.E202` (multiple FKs to User) | [apps/accounts/admin.py](file:///home/project/singapore-smb/backend/apps/accounts/admin.py) |
+| **Django Permission Hooks** | Added [has_perm()](file:///home/project/singapore-smb/backend/apps/accounts/models.py#308-310) and [has_module_perms()](file:///home/project/singapore-smb/backend/apps/accounts/models.py#311-313) to custom User model for admin compatibility | [apps/accounts/models.py](file:///home/project/singapore-smb/backend/apps/accounts/models.py) |
+| **Celery Beat Conditional** | Disabled beat schedule by default; enabled only when `ENABLE_CELERY_BEAT=1` (Phase 1 lacks task modules) | [config/celery.py](file:///home/project/singapore-smb/backend/config/celery.py) |
+| **django-allauth Modernization** | Replaced deprecated settings with `ACCOUNT_LOGIN_METHODS`, `ACCOUNT_SIGNUP_FIELDS` | [config/settings/base.py](file:///home/project/singapore-smb/backend/config/settings/base.py) |
+| **GST Rate Configurability** | Added `GST_DEFAULT_RATE` env var; removed hardcoded [(9%)](file:///home/project/singapore-smb/backend/apps/accounts/views.py#127-132) from GST code labels | [config/settings/base.py](file:///home/project/singapore-smb/backend/config/settings/base.py) |
+| **Factory Phone Fixes** | Fixed factories generating phone strings > 20 chars (Postgres `VARCHAR(20)` enforcement) | [apps/accounts/tests/factories.py](file:///home/project/singapore-smb/backend/apps/accounts/tests/factories.py) |
+| **Schema Alignment** | Aligned [database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) with Django migrations: UUID PKs for `user_roles`, unique constraints, email `VARCHAR(254)` | [database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) |
+| **Documentation** | Updated [backend/README.md](file:///home/project/singapore-smb/backend/README.md) with correct workflow and versions | [backend/README.md](file:///home/project/singapore-smb/backend/README.md) |
+
+#### Key Remediation Highlights
+
+1. **Django Admin Fix**: [UserRole](file:///home/project/singapore-smb/backend/apps/accounts/tests/factories.py#108-117) has two FKs to [User](file:///home/project/singapore-smb/backend/apps/accounts/models.py#199-346) ([user](file:///home/project/singapore-smb/backend/apps/accounts/views.py#70-77) and `assigned_by`), requiring explicit `fk_name` specification in admin inlines.
+
+2. **Celery Beat Protection**: Phase 1 doesn't include `apps.inventory`, `apps.commerce`, etc., so beat schedule tasks would fail. Conditional activation prevents runtime errors.
+
+3. **GST Rate Decoupling**: GST rate is now environment-configurable (`GST_DEFAULT_RATE`) rather than hardcoded, supporting rate changes without code changes.
+
+4. **Schema-Migration Alignment**: Critical fix to `core.user_roles` — changed from composite PK [(user_id, role_id)](file:///home/project/singapore-smb/backend/apps/accounts/views.py#127-132) to UUID PK with unique constraint, matching Django migration reality.
 
 ---
 
@@ -409,6 +443,8 @@ compliance  -- GST returns, consents, audit logs, PEPPOL
 | PROJECT_DEEP_UNDERSTANDING.md | Technical deep-dive | [/home/project/singapore-smb/PROJECT_DEEP_UNDERSTANDING.md](file:///home/project/singapore-smb/PROJECT_DEEP_UNDERSTANDING.md) |
 | master_execution_plan.md | Implementation phases | [/home/project/singapore-smb/master_execution_plan.md](file:///home/project/singapore-smb/master_execution_plan.md) |
 | database/schema.sql | Complete PostgreSQL schema | [/home/project/singapore-smb/database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) |
+| Phase1_sub-plan.md | Phase 1 walkthrough | [/home/project/singapore-smb/Phase1_sub-plan.md](file:///home/project/singapore-smb/Phase1_sub-plan.md) |
+| Phase1_remediation_plan_audit_log.md | Phase 1 fixes audit log | [/home/project/singapore-smb/Phase1_remediation_plan_audit_log.md](file:///home/project/singapore-smb/Phase1_remediation_plan_audit_log.md) |
 
 ---
 
