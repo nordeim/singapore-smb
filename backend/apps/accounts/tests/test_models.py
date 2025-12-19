@@ -162,7 +162,6 @@ class TestUserModel:
         
         assert user.failed_login_attempts == 0
         assert user.locked_until is None
-        assert user.last_login_ip == '127.0.0.1'
     
     def test_create_superuser(self):
         """Test superuser creation."""

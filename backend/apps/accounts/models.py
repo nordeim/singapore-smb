@@ -12,8 +12,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import models
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.core.validators import RegexValidator
 from django.utils import timezone
 
@@ -113,6 +112,11 @@ class Company(SoftDeleteModel):
         blank=True,
         help_text="Singapore postal code (6 digits)"
     )
+    country = models.CharField(
+        max_length=2,
+        default='SG',
+        help_text="ISO 3166-1 alpha-2 country code"
+    )
     
     # Subscription
     plan_tier = models.CharField(
@@ -130,7 +134,7 @@ class Company(SoftDeleteModel):
     )
     
     class Meta:
-        db_table = 'core_companies'
+        db_table = '"core"."companies"'
         verbose_name = 'Company'
         verbose_name_plural = 'Companies'
         ordering = ['name']
@@ -179,12 +183,9 @@ class UserManager(BaseUserManager):
     
     def create_superuser(self, email, password=None, **extra_fields):
         """Create and save a superuser."""
-        extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
         
-        if extra_fields.get('is_staff') is not True:
-            raise ValueError('Superuser must have is_staff=True.')
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
         
@@ -195,7 +196,7 @@ class UserManager(BaseUserManager):
 # USER MODEL
 # =============================================================================
 
-class User(AbstractBaseUser, PermissionsMixin, BaseModel):
+class User(AbstractBaseUser, BaseModel):
     """
     Custom user model with email-based authentication.
     
@@ -212,6 +213,12 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     email = models.EmailField(
         unique=True,
         help_text="Email address (used for login)"
+    )
+
+    password = models.CharField(
+        max_length=255,
+        db_column='password_hash',
+        help_text='Hashed password'
     )
     
     # Company association (null for superusers)
@@ -238,13 +245,13 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         default=True,
         help_text="Whether user can log in"
     )
-    is_staff = models.BooleanField(
-        default=False,
-        help_text="Can access admin site"
-    )
     is_verified = models.BooleanField(
         default=False,
         help_text="Email has been verified"
+    )
+    is_superuser = models.BooleanField(
+        default=False,
+        help_text="Superuser status"
     )
     
     # Security
@@ -266,10 +273,12 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         blank=True,
         help_text="Account locked until this time"
     )
-    last_login_ip = models.GenericIPAddressField(
+
+    deleted_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="IP address of last login"
+        db_index=True,
+        help_text="When this record was soft-deleted"
     )
     
     # Manager
@@ -280,7 +289,7 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     REQUIRED_FIELDS = []  # Email is already required via USERNAME_FIELD
     
     class Meta:
-        db_table = 'core_users'
+        db_table = '"core"."users"'
         verbose_name = 'User'
         verbose_name_plural = 'Users'
         ordering = ['email']
@@ -291,6 +300,16 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     
     def __str__(self):
         return self.email
+
+    @property
+    def is_staff(self) -> bool:
+        return bool(self.is_superuser)
+
+    def has_perm(self, perm, obj=None):
+        return bool(self.is_superuser)
+
+    def has_module_perms(self, app_label):
+        return bool(self.is_superuser)
     
     @property
     def full_name(self) -> str:
@@ -320,10 +339,9 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         self.failed_login_attempts = 0
         self.locked_until = None
         self.last_login = timezone.now()
-        self.last_login_ip = ip_address
         self.save(update_fields=[
             'failed_login_attempts', 'locked_until', 
-            'last_login', 'last_login_ip', 'updated_at'
+            'last_login', 'updated_at'
         ])
 
 
@@ -378,7 +396,7 @@ class Role(BaseModel):
     )
     
     class Meta:
-        db_table = 'core_roles'
+        db_table = '"core"."roles"'
         verbose_name = 'Role'
         verbose_name_plural = 'Roles'
         ordering = ['name']
@@ -448,7 +466,7 @@ class UserRole(BaseModel):
     )
     
     class Meta:
-        db_table = 'core_user_roles'
+        db_table = '"core"."user_roles"'
         verbose_name = 'User Role'
         verbose_name_plural = 'User Roles'
         constraints = [

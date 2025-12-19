@@ -42,6 +42,10 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 
+# CSP (Django 6 native)
+# Enforce the same baseline policy that is report-only elsewhere.
+SECURE_CSP = SECURE_CSP_REPORT_ONLY  # noqa: F405
+
 # =============================================================================
 # DATABASE
 # =============================================================================

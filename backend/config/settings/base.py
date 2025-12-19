@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import environ
+from django.utils.csp import CSP
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -48,6 +49,7 @@ THIRD_PARTY_APPS = [
     # Django REST Framework
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt.token_blacklist',
     
     # Authentication
     'allauth',
@@ -79,16 +81,17 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'core.middleware.TenantMiddleware',
+    'core.middleware.AuditMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
-    # Custom middleware (add after implementation)
-    # 'core.middleware.TenantMiddleware',
-    # 'core.middleware.AuditMiddleware',
+    'core.middleware.SecurityHeadersMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -212,6 +215,23 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
     'SCHEMA_PATH_PREFIX': r'/api/v[0-9]',
+}
+
+# =============================================================================
+# DJANGO 6 CSP (REPORT-ONLY BASELINE)
+# =============================================================================
+
+SECURE_CSP_REPORT_ONLY = {
+    'default-src': [CSP.SELF],
+    'base-uri': [CSP.SELF],
+    'object-src': [CSP.NONE],
+    'frame-ancestors': [CSP.NONE],
+    # Pragmatic baseline: admin and DRF docs often rely on inline scripts/styles.
+    'script-src': [CSP.SELF, CSP.UNSAFE_INLINE],
+    'style-src': [CSP.SELF, CSP.UNSAFE_INLINE],
+    'img-src': [CSP.SELF, 'data:'],
+    'font-src': [CSP.SELF, 'data:'],
+    'connect-src': [CSP.SELF],
 }
 
 # =============================================================================

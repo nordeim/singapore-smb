@@ -24,7 +24,7 @@ class CompanyFactory(DjangoModelFactory):
     legal_name = factory.LazyAttribute(lambda obj: f"{obj.name} Pte Ltd")
     uen = factory.Sequence(lambda n: f'2024{n:05d}A')
     email = factory.Faker('company_email')
-    phone = factory.Faker('phone_number')
+    phone = factory.Sequence(lambda n: f'+65{80000000 + (n % 9999999):07d}')
     address_line1 = factory.Faker('street_address')
     postal_code = factory.Sequence(lambda n: f'{100000 + n:06d}'[:6])
     plan_tier = 'standard'
@@ -48,7 +48,7 @@ class UserFactory(DjangoModelFactory):
     email = factory.Faker('email')
     first_name = factory.Faker('first_name')
     last_name = factory.Faker('last_name')
-    phone = factory.Faker('phone_number')
+    phone = factory.Sequence(lambda n: f'+65{90000000 + (n % 9999999):07d}')
     company = factory.SubFactory(CompanyFactory)
     is_active = True
     is_verified = True
@@ -68,7 +68,6 @@ class UserFactory(DjangoModelFactory):
 class SuperUserFactory(UserFactory):
     """Factory for creating superusers."""
     
-    is_staff = True
     is_superuser = True
     company = None
 

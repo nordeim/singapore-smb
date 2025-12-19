@@ -19,6 +19,7 @@ from .models import Company, User, Role, UserRole
 class UserRoleInline(admin.TabularInline):
     """Inline for managing user role assignments."""
     model = UserRole
+    fk_name = 'user'
     extra = 1
     autocomplete_fields = ['role']
     readonly_fields = ['assigned_at', 'assigned_by']
@@ -111,9 +112,10 @@ class UserAdmin(BaseUserAdmin):
     list_display = [
         'email', 'full_name', 'company', 'is_active', 'is_verified', 'mfa_status', 'last_login'
     ]
-    list_filter = ['is_active', 'is_verified', 'is_staff', 'mfa_enabled', 'company']
+    list_filter = ['is_active', 'is_verified', 'mfa_enabled', 'company']
     search_fields = ['email', 'first_name', 'last_name']
     ordering = ['-created_at']
+    filter_horizontal = ()
     
     # Override fieldsets for email-based user
     fieldsets = (
@@ -127,10 +129,10 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('company',)
         }),
         ('Permissions', {
-            'fields': ('is_active', 'is_staff', 'is_superuser', 'is_verified')
+            'fields': ('is_active', 'is_superuser', 'is_verified')
         }),
         ('Security', {
-            'fields': ('mfa_enabled', 'failed_login_attempts', 'locked_until', 'last_login_ip'),
+            'fields': ('mfa_enabled', 'failed_login_attempts', 'locked_until'),
             'classes': ('collapse',)
         }),
         ('Important Dates', {
@@ -146,7 +148,7 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
     
-    readonly_fields = ['last_login', 'created_at', 'updated_at', 'last_login_ip']
+    readonly_fields = ['last_login', 'created_at', 'updated_at']
     autocomplete_fields = ['company']
     inlines = [UserRoleInline]
     

@@ -1,3 +1,2967 @@
+# backend/.env.example
+```example
+# Django settings
+DJANGO_SETTINGS_MODULE=config.settings.development
+SECRET_KEY=django-insecure-dev-key-change-in-production
+
+# Database
+DB_NAME=singapore_smb
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/singapore_smb
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# Debug
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+
+# CORS
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+
+# Logging
+DJANGO_LOG_LEVEL=INFO
+
+```
+
+# backend/.python-version
+```txt
+3.12
+
+```
+
+# backend/apps/accounts/apps.py
+```py
+"""
+Django app configuration for accounts module.
+"""
+from django.apps import AppConfig
+
+
+class AccountsConfig(AppConfig):
+    """Configuration for the accounts app."""
+    
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.accounts'
+    verbose_name = 'User Accounts'
+    
+    def ready(self):
+        """
+        Called when Django starts.
+        Import signals to register them.
+        """
+        try:
+            import apps.accounts.signals  # noqa: F401
+        except ImportError:
+            pass
+
+```
+
+# backend/apps/accounts/__init__.py
+```py
+"""Accounts app for user and company management."""
+
+```
+
+# backend/apps/accounts/tests/__init__.py
+```py
+"""Tests package for accounts app."""
+
+```
+
+# backend/apps/accounts/tests/test_views.py
+```py
+"""
+API tests for accounts views.
+
+Tests:
+- Authentication endpoints (login, logout, refresh)
+- Company CRUD
+- User CRUD
+- Role CRUD
+"""
+import pytest
+from django.urls import reverse
+from rest_framework.test import APIClient
+from rest_framework import status
+
+from apps.accounts.models import Company, User, Role, UserRole
+from apps.accounts.tests.factories import (
+    CompanyFactory, UserFactory, SuperUserFactory,
+    RoleFactory, UserRoleFactory
+)
+
+
+pytestmark = pytest.mark.django_db
+
+
+# =============================================================================
+# AUTH ENDPOINT TESTS
+# =============================================================================
+
+class TestAuthEndpoints:
+    """Tests for authentication endpoints."""
+    
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+    
+    @pytest.fixture
+    def user_with_password(self):
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.save()
+        return user
+    
+    def test_login_success(self, api_client, user_with_password):
+        """Test successful login."""
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': user_with_password.email,
+                'password': 'testpass123'
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert 'access' in response.data
+        assert 'refresh' in response.data
+        assert 'user' in response.data
+    
+    def test_login_invalid_credentials(self, api_client, user_with_password):
+        """Test login with invalid password."""
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': user_with_password.email,
+                'password': 'wrongpassword'
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_login_nonexistent_user(self, api_client):
+        """Test login with nonexistent email."""
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': 'nouser@example.com',
+                'password': 'password'
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_logout(self, api_client, user_with_password):
+        """Test logout endpoint."""
+        # Login first
+        login_response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': user_with_password.email,
+                'password': 'testpass123'
+            },
+            format='json'
+        )
+        
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {login_response.data["access"]}'
+        )
+        
+        response = api_client.post(
+            '/api/v1/accounts/auth/logout/',
+            {'refresh': login_response.data['refresh']},
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+    
+    def test_token_refresh(self, api_client, user_with_password):
+        """Test token refresh endpoint."""
+        # Login first
+        login_response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': user_with_password.email,
+                'password': 'testpass123'
+            },
+            format='json'
+        )
+        
+        response = api_client.post(
+            '/api/v1/accounts/auth/refresh/',
+            {'refresh': login_response.data['refresh']},
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert 'access' in response.data
+    
+    def test_current_user(self, api_client, user_with_password):
+        """Test current user endpoint."""
+        # Login first
+        login_response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {
+                'email': user_with_password.email,
+                'password': 'testpass123'
+            },
+            format='json'
+        )
+        
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {login_response.data["access"]}'
+        )
+        
+        response = api_client.get('/api/v1/accounts/auth/me/')
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['email'] == user_with_password.email
+
+
+# =============================================================================
+# USER ENDPOINT TESTS
+# =============================================================================
+
+class TestUserEndpoints:
+    """Tests for user management endpoints."""
+    
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+    
+    @pytest.fixture
+    def authenticated_user(self, api_client):
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.save()
+        
+        # Login
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {'email': user.email, 'password': 'testpass123'},
+            format='json'
+        )
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {response.data["access"]}'
+        )
+        return user
+    
+    def test_list_users_in_company(self, api_client, authenticated_user):
+        """Test listing users in same company."""
+        # Create another user in same company
+        UserFactory(company=authenticated_user.company)
+        
+        response = api_client.get('/api/v1/accounts/users/')
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.data['results']) == 2
+    
+    def test_get_user_profile(self, api_client, authenticated_user):
+        """Test getting user profile."""
+        response = api_client.get('/api/v1/accounts/users/me/')
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['email'] == authenticated_user.email
+    
+    def test_update_user_profile(self, api_client, authenticated_user):
+        """Test updating user profile."""
+        response = api_client.patch(
+            '/api/v1/accounts/users/update_profile/',
+            {'first_name': 'Updated'},
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['first_name'] == 'Updated'
+    
+    def test_change_password(self, api_client, authenticated_user):
+        """Test password change."""
+        response = api_client.post(
+            '/api/v1/accounts/users/change_password/',
+            {
+                'current_password': 'testpass123',
+                'new_password': 'newpass456!',
+                'new_password_confirm': 'newpass456!'
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+
+
+# =============================================================================
+# COMPANY ENDPOINT TESTS
+# =============================================================================
+
+class TestCompanyEndpoints:
+    """Tests for company management endpoints."""
+    
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+    
+    def test_create_company_unauthenticated(self, api_client):
+        """Test company creation without authentication (registration)."""
+        response = api_client.post(
+            '/api/v1/accounts/companies/',
+            {
+                'name': 'New Corp',
+                'uen': '201812345A',
+                'email': 'company@example.com',
+                'owner_email': 'owner@example.com',
+                'owner_password': 'SecurePass123!'
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['name'] == 'New Corp'
+    
+    def test_get_own_company(self, api_client):
+        """Test getting own company details."""
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.save()
+        
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {'email': user.email, 'password': 'testpass123'},
+            format='json'
+        )
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {response.data["access"]}'
+        )
+        
+        response = api_client.get(
+            f'/api/v1/accounts/companies/{user.company.id}/'
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['id'] == str(user.company.id)
+
+
+# =============================================================================
+# ROLE ENDPOINT TESTS
+# =============================================================================
+
+class TestRoleEndpoints:
+    """Tests for role management endpoints."""
+    
+    @pytest.fixture
+    def api_client(self):
+        return APIClient()
+    
+    @pytest.fixture
+    def authenticated_user(self, api_client):
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.save()
+        
+        response = api_client.post(
+            '/api/v1/accounts/auth/login/',
+            {'email': user.email, 'password': 'testpass123'},
+            format='json'
+        )
+        api_client.credentials(
+            HTTP_AUTHORIZATION=f'Bearer {response.data["access"]}'
+        )
+        return user
+    
+    def test_list_company_roles(self, api_client, authenticated_user):
+        """Test listing roles in company."""
+        RoleFactory(company=authenticated_user.company)
+        
+        response = api_client.get('/api/v1/accounts/roles/')
+        
+        assert response.status_code == status.HTTP_200_OK
+    
+    def test_create_role(self, api_client, authenticated_user):
+        """Test creating a new role."""
+        response = api_client.post(
+            '/api/v1/accounts/roles/',
+            {
+                'name': 'custom_role',
+                'description': 'A custom role',
+                'permissions': ['orders.view']
+            },
+            format='json'
+        )
+        
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data['name'] == 'custom_role'
+
+```
+
+# backend/apps/accounts/tests/factories.py
+```py
+"""
+Factory classes for accounts tests.
+
+Uses factory_boy to create test data for:
+- Company
+- User
+- Role
+- UserRole
+"""
+import factory
+from factory.django import DjangoModelFactory
+from django.contrib.auth.hashers import make_password
+
+from apps.accounts.models import Company, User, Role, UserRole
+
+
+class CompanyFactory(DjangoModelFactory):
+    """Factory for creating Company instances."""
+    
+    class Meta:
+        model = Company
+    
+    name = factory.Faker('company')
+    legal_name = factory.LazyAttribute(lambda obj: f"{obj.name} Pte Ltd")
+    uen = factory.Sequence(lambda n: f'2024{n:05d}A')
+    email = factory.Faker('company_email')
+    phone = factory.Faker('phone_number')
+    address_line1 = factory.Faker('street_address')
+    postal_code = factory.Sequence(lambda n: f'{100000 + n:06d}'[:6])
+    plan_tier = 'standard'
+    gst_registered = False
+
+
+class GSTRegisteredCompanyFactory(CompanyFactory):
+    """Factory for creating GST-registered companies."""
+    
+    gst_registered = True
+    gst_registration_number = factory.Sequence(lambda n: f'M{n:08d}')
+    gst_registration_date = factory.Faker('date_this_decade')
+
+
+class UserFactory(DjangoModelFactory):
+    """Factory for creating User instances."""
+    
+    class Meta:
+        model = User
+    
+    email = factory.Faker('email')
+    first_name = factory.Faker('first_name')
+    last_name = factory.Faker('last_name')
+    phone = factory.Faker('phone_number')
+    company = factory.SubFactory(CompanyFactory)
+    is_active = True
+    is_verified = True
+    password = factory.LazyFunction(lambda: make_password('testpass123'))
+    
+    @classmethod
+    def _create(cls, model_class, *args, **kwargs):
+        """Override to handle password properly."""
+        password = kwargs.pop('password', None)
+        user = super()._create(model_class, *args, **kwargs)
+        if password and not password.startswith('pbkdf2_'):
+            user.set_password(password)
+            user.save()
+        return user
+
+
+class SuperUserFactory(UserFactory):
+    """Factory for creating superusers."""
+    
+    is_staff = True
+    is_superuser = True
+    company = None
+
+
+class RoleFactory(DjangoModelFactory):
+    """Factory for creating Role instances."""
+    
+    class Meta:
+        model = Role
+    
+    name = factory.Sequence(lambda n: f'role_{n}')
+    description = factory.Faker('sentence')
+    company = factory.SubFactory(CompanyFactory)
+    permissions = factory.LazyFunction(lambda: ['users.view', 'orders.view'])
+    is_system = False
+
+
+class OwnerRoleFactory(RoleFactory):
+    """Factory for creating owner roles."""
+    
+    name = 'owner'
+    description = 'Company owner with full access'
+    permissions = factory.LazyFunction(lambda: ['all'])
+
+
+class AdminRoleFactory(RoleFactory):
+    """Factory for creating admin roles."""
+    
+    name = 'admin'
+    description = 'Administrative access'
+    permissions = factory.LazyFunction(lambda: [
+        'users.view', 'users.create', 'users.update', 'users.delete',
+        'products.view', 'products.create', 'products.update', 'products.delete',
+        'orders.view', 'orders.update',
+    ])
+
+
+class UserRoleFactory(DjangoModelFactory):
+    """Factory for creating UserRole instances."""
+    
+    class Meta:
+        model = UserRole
+    
+    user = factory.SubFactory(UserFactory)
+    role = factory.SubFactory(RoleFactory)
+    assigned_by = None
+
+```
+
+# backend/apps/accounts/tests/test_services.py
+```py
+"""
+Unit tests for accounts services.
+
+Tests:
+- AuthService (authentication, tokens)
+- UserService (user management)
+- CompanyService (company management)
+"""
+import pytest
+from django.utils import timezone
+from unittest.mock import patch, MagicMock
+
+from apps.accounts.models import Company, User, Role, UserRole
+from apps.accounts.services import AuthService, UserService, CompanyService
+from apps.accounts.tests.factories import (
+    CompanyFactory, UserFactory, RoleFactory
+)
+
+
+pytestmark = pytest.mark.django_db
+
+
+# =============================================================================
+# AUTH SERVICE TESTS
+# =============================================================================
+
+class TestAuthService:
+    """Tests for AuthService."""
+    
+    def test_authenticate_valid_credentials(self):
+        """Test authentication with valid credentials."""
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.save()
+        
+        authenticated = AuthService.authenticate(user.email, 'testpass123')
+        
+        assert authenticated is not None
+        assert authenticated.id == user.id
+    
+    def test_authenticate_invalid_password(self):
+        """Test authentication with invalid password."""
+        user = UserFactory()
+        user.set_password('correctpass')
+        user.save()
+        
+        authenticated = AuthService.authenticate(user.email, 'wrongpass')
+        
+        assert authenticated is None
+    
+    def test_authenticate_nonexistent_user(self):
+        """Test authentication with nonexistent email."""
+        authenticated = AuthService.authenticate('nouser@example.com', 'password')
+        
+        assert authenticated is None
+    
+    def test_authenticate_locked_account(self):
+        """Test authentication with locked account."""
+        user = UserFactory()
+        user.set_password('testpass123')
+        user.locked_until = timezone.now() + timezone.timedelta(hours=1)
+        user.save()
+        
+        authenticated = AuthService.authenticate(user.email, 'testpass123')
+        
+        assert authenticated is None
+    
+    def test_authenticate_inactive_user(self):
+        """Test authentication with inactive user."""
+        user = UserFactory(is_active=False)
+        user.set_password('testpass123')
+        user.save()
+        
+        authenticated = AuthService.authenticate(user.email, 'testpass123')
+        
+        assert authenticated is None
+    
+    def test_generate_tokens(self):
+        """Test JWT token generation."""
+        user = UserFactory()
+        
+        tokens = AuthService.generate_tokens(user)
+        
+        assert 'access' in tokens
+        assert 'refresh' in tokens
+        assert tokens['access'] != ''
+        assert tokens['refresh'] != ''
+    
+    def test_refresh_token(self):
+        """Test token refresh."""
+        user = UserFactory()
+        tokens = AuthService.generate_tokens(user)
+        
+        new_tokens = AuthService.refresh_token(tokens['refresh'])
+        
+        assert 'access' in new_tokens
+        assert new_tokens['access'] != tokens['access']
+
+
+# =============================================================================
+# USER SERVICE TESTS
+# =============================================================================
+
+class TestUserService:
+    """Tests for UserService."""
+    
+    def test_create_user(self):
+        """Test user creation via service."""
+        company = CompanyFactory()
+        
+        user = UserService.create_user(
+            email='newuser@example.com',
+            password='securepass123',
+            company=company,
+            first_name='John',
+            last_name='Doe'
+        )
+        
+        assert user.id is not None
+        assert user.email == 'newuser@example.com'
+        assert user.company == company
+        assert user.check_password('securepass123')
+    
+    def test_create_user_with_roles(self):
+        """Test user creation with role assignment."""
+        company = CompanyFactory()
+        role = RoleFactory(name='admin', company=company)
+        
+        user = UserService.create_user(
+            email='admin@example.com',
+            password='securepass123',
+            company=company,
+            role_names=['admin']
+        )
+        
+        assert 'admin' in list(user.roles.values_list('name', flat=True))
+    
+    def test_update_user(self):
+        """Test user profile update."""
+        user = UserFactory(first_name='Old', last_name='Name')
+        
+        updated = UserService.update_user(
+            user,
+            first_name='New',
+            last_name='Name'
+        )
+        
+        assert updated.first_name == 'New'
+    
+    def test_change_password(self):
+        """Test password change."""
+        user = UserFactory()
+        user.set_password('oldpass')
+        user.save()
+        
+        UserService.change_password(user, 'newpass123')
+        
+        assert user.check_password('newpass123')
+    
+    def test_assign_role(self):
+        """Test role assignment."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role = RoleFactory(company=company)
+        
+        user_role = UserService.assign_role(user, role)
+        
+        assert user_role.user == user
+        assert user_role.role == role
+    
+    def test_remove_role(self):
+        """Test role removal."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role = RoleFactory(company=company)
+        UserRole.objects.create(user=user, role=role)
+        
+        removed = UserService.remove_role(user, role)
+        
+        assert removed is True
+        assert role not in user.roles
+    
+    def test_has_permission(self):
+        """Test permission checking."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role = RoleFactory(company=company, permissions=['orders.view'])
+        UserRole.objects.create(user=user, role=role)
+        
+        assert UserService.has_permission(user, 'orders.view') is True
+        assert UserService.has_permission(user, 'orders.delete') is False
+
+
+# =============================================================================
+# COMPANY SERVICE TESTS
+# =============================================================================
+
+class TestCompanyService:
+    """Tests for CompanyService."""
+    
+    def test_create_company_with_owner(self):
+        """Test company creation with owner user."""
+        company, owner = CompanyService.create_company(
+            name='Test Corp',
+            uen='201812345A',
+            email='company@example.com',
+            owner_email='owner@example.com',
+            owner_password='securepass123'
+        )
+        
+        assert company.id is not None
+        assert company.name == 'Test Corp'
+        assert owner.email == 'owner@example.com'
+        assert owner.company == company
+    
+    def test_create_company_creates_default_roles(self):
+        """Test default roles are created for new company."""
+        company, owner = CompanyService.create_company(
+            name='Test Corp',
+            uen='201812345B',
+            email='company@example.com',
+            owner_email='owner@example.com',
+            owner_password='securepass123'
+        )
+        
+        roles = list(company.roles.values_list('name', flat=True))
+        assert 'owner' in roles
+        assert 'admin' in roles
+        assert 'finance' in roles
+    
+    def test_owner_has_owner_role(self):
+        """Test owner user is assigned owner role."""
+        company, owner = CompanyService.create_company(
+            name='Test Corp',
+            uen='201812345C',
+            email='company@example.com',
+            owner_email='owner@example.com',
+            owner_password='securepass123'
+        )
+        
+        owner_roles = list(owner.roles.values_list('name', flat=True))
+        assert 'owner' in owner_roles
+    
+    def test_check_gst_threshold_below(self):
+        """Test GST threshold check - below threshold."""
+        company = CompanyFactory()
+        
+        should_register = CompanyService.check_gst_threshold(company, 500000)
+        
+        assert should_register is False
+    
+    def test_check_gst_threshold_above(self):
+        """Test GST threshold check - above threshold."""
+        company = CompanyFactory()
+        
+        should_register = CompanyService.check_gst_threshold(company, 1500000)
+        
+        assert should_register is True
+    
+    def test_create_default_roles(self):
+        """Test default role creation."""
+        company = CompanyFactory()
+        
+        roles = CompanyService.create_default_roles(company)
+        
+        assert len(roles) == 5  # owner, admin, finance, warehouse, sales
+
+```
+
+# backend/apps/accounts/tests/test_models.py
+```py
+"""
+Unit tests for accounts models.
+
+Tests:
+- Company model (UEN validation, GST fields)
+- User model (email auth, password, locking)
+- Role model (permissions)
+- UserRole model (assignments)
+"""
+import pytest
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+from datetime import timedelta
+
+from apps.accounts.models import Company, User, Role, UserRole
+from apps.accounts.tests.factories import (
+    CompanyFactory, GSTRegisteredCompanyFactory,
+    UserFactory, SuperUserFactory,
+    RoleFactory, OwnerRoleFactory,
+    UserRoleFactory,
+)
+
+
+pytestmark = pytest.mark.django_db
+
+
+# =============================================================================
+# COMPANY MODEL TESTS
+# =============================================================================
+
+class TestCompanyModel:
+    """Tests for Company model."""
+    
+    def test_create_company_with_valid_uen(self):
+        """Test company creation with valid Singapore UEN."""
+        company = CompanyFactory(uen='201812345A')
+        assert company.id is not None
+        assert company.uen == '201812345A'
+    
+    def test_company_str_representation(self):
+        """Test string representation of company."""
+        company = CompanyFactory(name='Test Corp', uen='201812345A')
+        assert str(company) == 'Test Corp (201812345A)'
+    
+    def test_uen_uniqueness(self):
+        """Test that duplicate UEN raises error."""
+        CompanyFactory(uen='201812345A')
+        
+        with pytest.raises(Exception):  # IntegrityError
+            CompanyFactory(uen='201812345A')
+    
+    def test_gst_registered_company(self):
+        """Test GST-registered company properties."""
+        company = GSTRegisteredCompanyFactory()
+        assert company.gst_registered is True
+        assert company.is_gst_registered is True
+        assert company.gst_registration_number != ''
+    
+    def test_non_gst_registered_company(self):
+        """Test non-GST-registered company."""
+        company = CompanyFactory(gst_registered=False)
+        assert company.is_gst_registered is False
+    
+    def test_company_settings_json(self):
+        """Test company settings JSON field."""
+        company = CompanyFactory()
+        company.set_setting('theme', 'dark')
+        
+        assert company.get_setting('theme') == 'dark'
+        assert company.get_setting('nonexistent', 'default') == 'default'
+    
+    def test_soft_delete(self):
+        """Test soft delete functionality."""
+        company = CompanyFactory()
+        company_id = company.id
+        
+        company.delete()
+        
+        # Should not appear in default queryset
+        assert Company.objects.filter(id=company_id).count() == 0
+        
+        # Should appear in all_objects
+        assert Company.all_objects.filter(id=company_id).count() == 1
+        assert Company.all_objects.get(id=company_id).is_deleted is True
+
+
+# =============================================================================
+# USER MODEL TESTS
+# =============================================================================
+
+class TestUserModel:
+    """Tests for User model."""
+    
+    def test_create_user_with_email(self):
+        """Test user creation with email as identifier."""
+        user = UserFactory(email='test@example.com')
+        assert user.id is not None
+        assert user.email == 'test@example.com'
+    
+    def test_user_str_representation(self):
+        """Test string representation of user."""
+        user = UserFactory(email='test@example.com')
+        assert str(user) == 'test@example.com'
+    
+    def test_user_full_name(self):
+        """Test full name property."""
+        user = UserFactory(first_name='John', last_name='Doe')
+        assert user.full_name == 'John Doe'
+    
+    def test_user_full_name_fallback_to_email(self):
+        """Test full name falls back to email when names empty."""
+        user = UserFactory(first_name='', last_name='', email='test@example.com')
+        assert user.full_name == 'test@example.com'
+    
+    def test_user_company_association(self):
+        """Test user belongs to company."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        
+        assert user.company == company
+        assert user in company.users.all()
+    
+    def test_email_uniqueness(self):
+        """Test that duplicate email raises error."""
+        UserFactory(email='duplicate@example.com')
+        
+        with pytest.raises(Exception):
+            UserFactory(email='duplicate@example.com')
+    
+    def test_password_authentication(self):
+        """Test password check."""
+        user = UserFactory()
+        user.set_password('securepass123')
+        user.save()
+        
+        assert user.check_password('securepass123') is True
+        assert user.check_password('wrongpass') is False
+    
+    def test_record_failed_login(self):
+        """Test failed login attempt recording."""
+        user = UserFactory(failed_login_attempts=0)
+        
+        user.record_failed_login()
+        
+        assert user.failed_login_attempts == 1
+    
+    def test_account_lockout_after_failed_attempts(self):
+        """Test account locks after 5 failed attempts."""
+        user = UserFactory(failed_login_attempts=4)
+        
+        user.record_failed_login()
+        
+        assert user.failed_login_attempts == 5
+        assert user.locked_until is not None
+        assert user.is_locked is True
+    
+    def test_successful_login_resets_failed_attempts(self):
+        """Test successful login resets failed attempts."""
+        user = UserFactory(failed_login_attempts=3)
+        
+        user.record_successful_login('127.0.0.1')
+        
+        assert user.failed_login_attempts == 0
+        assert user.locked_until is None
+        assert user.last_login_ip == '127.0.0.1'
+    
+    def test_create_superuser(self):
+        """Test superuser creation."""
+        user = SuperUserFactory()
+        
+        assert user.is_staff is True
+        assert user.is_superuser is True
+
+
+# =============================================================================
+# ROLE MODEL TESTS
+# =============================================================================
+
+class TestRoleModel:
+    """Tests for Role model."""
+    
+    def test_create_role(self):
+        """Test role creation."""
+        role = RoleFactory(name='test_role')
+        assert role.id is not None
+        assert role.name == 'test_role'
+    
+    def test_role_str_representation(self):
+        """Test string representation of role."""
+        company = CompanyFactory(name='Test Corp')
+        role = RoleFactory(name='admin', company=company)
+        assert str(role) == 'admin (Test Corp)'
+    
+    def test_role_permissions_check(self):
+        """Test role permission checking."""
+        role = RoleFactory(permissions=['users.view', 'orders.create'])
+        
+        assert role.has_permission('users.view') is True
+        assert role.has_permission('orders.create') is True
+        assert role.has_permission('products.delete') is False
+    
+    def test_owner_role_has_all_permissions(self):
+        """Test owner role with 'all' permission."""
+        role = OwnerRoleFactory()
+        
+        assert role.has_permission('anything') is True
+        assert role.has_permission('products.delete') is True
+    
+    def test_add_permission_to_role(self):
+        """Test adding permission to role."""
+        role = RoleFactory(permissions=['users.view'])
+        
+        role.add_permission('users.create')
+        
+        assert 'users.create' in role.permissions
+    
+    def test_remove_permission_from_role(self):
+        """Test removing permission from role."""
+        role = RoleFactory(permissions=['users.view', 'users.create'])
+        
+        role.remove_permission('users.create')
+        
+        assert 'users.create' not in role.permissions
+
+
+# =============================================================================
+# USER ROLE MODEL TESTS
+# =============================================================================
+
+class TestUserRoleModel:
+    """Tests for UserRole model."""
+    
+    def test_assign_role_to_user(self):
+        """Test role assignment to user."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role = RoleFactory(company=company)
+        
+        user_role = UserRoleFactory(user=user, role=role)
+        
+        assert user_role.user == user
+        assert user_role.role == role
+        assert user_role.assigned_at is not None
+    
+    def test_user_roles_property(self):
+        """Test user roles property."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role1 = RoleFactory(company=company, name='role1')
+        role2 = RoleFactory(company=company, name='role2')
+        
+        UserRoleFactory(user=user, role=role1)
+        UserRoleFactory(user=user, role=role2)
+        
+        user_roles = list(user.roles.values_list('name', flat=True))
+        assert 'role1' in user_roles
+        assert 'role2' in user_roles
+    
+    def test_unique_user_role_constraint(self):
+        """Test that same role can't be assigned twice."""
+        company = CompanyFactory()
+        user = UserFactory(company=company)
+        role = RoleFactory(company=company)
+        
+        UserRoleFactory(user=user, role=role)
+        
+        with pytest.raises(Exception):  # IntegrityError
+            UserRoleFactory(user=user, role=role)
+
+```
+
+# backend/apps/accounts/admin.py
+```py
+"""
+Django Admin configuration for accounts app.
+
+Provides admin interfaces for:
+- Company management
+- User management
+- Role management
+"""
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.html import format_html
+from .models import Company, User, Role, UserRole
+
+
+# =============================================================================
+# INLINE ADMINS
+# =============================================================================
+
+class UserRoleInline(admin.TabularInline):
+    """Inline for managing user role assignments."""
+    model = UserRole
+    extra = 1
+    autocomplete_fields = ['role']
+    readonly_fields = ['assigned_at', 'assigned_by']
+
+
+class CompanyUserInline(admin.TabularInline):
+    """Inline for viewing company users."""
+    model = User
+    extra = 0
+    fields = ['email', 'first_name', 'last_name', 'is_active']
+    readonly_fields = ['email']
+    can_delete = False
+    max_num = 0  # Don't allow adding users inline
+
+
+class CompanyRoleInline(admin.TabularInline):
+    """Inline for managing company roles."""
+    model = Role
+    extra = 0
+    fields = ['name', 'description', 'is_system']
+    readonly_fields = ['is_system']
+
+
+# =============================================================================
+# COMPANY ADMIN
+# =============================================================================
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    """Admin interface for Company model."""
+    
+    list_display = [
+        'name', 'uen', 'gst_status', 'plan_tier', 'user_count', 'created_at'
+    ]
+    list_filter = ['gst_registered', 'plan_tier', 'created_at']
+    search_fields = ['name', 'uen', 'email']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'deleted_at']
+    ordering = ['-created_at']
+    
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('id', 'name', 'legal_name', 'uen')
+        }),
+        ('GST Information', {
+            'fields': ('gst_registered', 'gst_registration_number', 'gst_registration_date'),
+            'classes': ('collapse',)
+        }),
+        ('Contact', {
+            'fields': ('email', 'phone', 'website')
+        }),
+        ('Address', {
+            'fields': ('address_line1', 'address_line2', 'postal_code'),
+            'classes': ('collapse',)
+        }),
+        ('Subscription', {
+            'fields': ('plan_tier', 'settings')
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at', 'deleted_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    inlines = [CompanyRoleInline, CompanyUserInline]
+    
+    def gst_status(self, obj):
+        """Display GST registration status with color."""
+        if obj.gst_registered:
+            return format_html(
+                '<span style="color: green;">✓ {}</span>',
+                obj.gst_registration_number
+            )
+        return format_html('<span style="color: gray;">Not Registered</span>')
+    gst_status.short_description = 'GST Status'
+    
+    def user_count(self, obj):
+        """Display count of users."""
+        return obj.users.count()
+    user_count.short_description = 'Users'
+
+
+# =============================================================================
+# USER ADMIN
+# =============================================================================
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    """Admin interface for User model (email-based)."""
+    
+    list_display = [
+        'email', 'full_name', 'company', 'is_active', 'is_verified', 'mfa_status', 'last_login'
+    ]
+    list_filter = ['is_active', 'is_verified', 'is_staff', 'mfa_enabled', 'company']
+    search_fields = ['email', 'first_name', 'last_name']
+    ordering = ['-created_at']
+    
+    # Override fieldsets for email-based user
+    fieldsets = (
+        (None, {
+            'fields': ('email', 'password')
+        }),
+        ('Personal Info', {
+            'fields': ('first_name', 'last_name', 'phone')
+        }),
+        ('Company', {
+            'fields': ('company',)
+        }),
+        ('Permissions', {
+            'fields': ('is_active', 'is_staff', 'is_superuser', 'is_verified')
+        }),
+        ('Security', {
+            'fields': ('mfa_enabled', 'failed_login_attempts', 'locked_until', 'last_login_ip'),
+            'classes': ('collapse',)
+        }),
+        ('Important Dates', {
+            'fields': ('last_login', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'password1', 'password2', 'company'),
+        }),
+    )
+    
+    readonly_fields = ['last_login', 'created_at', 'updated_at', 'last_login_ip']
+    autocomplete_fields = ['company']
+    inlines = [UserRoleInline]
+    
+    def full_name(self, obj):
+        """Display user's full name."""
+        return obj.full_name
+    full_name.short_description = 'Name'
+    
+    def mfa_status(self, obj):
+        """Display MFA status with icon."""
+        if obj.mfa_enabled:
+            return format_html('<span style="color: green;">✓ Enabled</span>')
+        return format_html('<span style="color: gray;">Disabled</span>')
+    mfa_status.short_description = 'MFA'
+
+
+# =============================================================================
+# ROLE ADMIN
+# =============================================================================
+
+@admin.register(Role)
+class RoleAdmin(admin.ModelAdmin):
+    """Admin interface for Role model."""
+    
+    list_display = ['name', 'company', 'permission_count', 'user_count', 'is_system']
+    list_filter = ['is_system', 'company']
+    search_fields = ['name', 'description']
+    ordering = ['company', 'name']
+    
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'description', 'company')
+        }),
+        ('Permissions', {
+            'fields': ('permissions',),
+            'description': 'Enter permissions as a JSON array, e.g. ["users.view", "orders.create"]'
+        }),
+        ('System', {
+            'fields': ('is_system',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    readonly_fields = ['is_system']
+    
+    def permission_count(self, obj):
+        """Display count of permissions."""
+        if 'all' in obj.permissions:
+            return 'All'
+        return len(obj.permissions)
+    permission_count.short_description = 'Permissions'
+    
+    def user_count(self, obj):
+        """Display count of users with this role."""
+        return obj.user_roles.count()
+    user_count.short_description = 'Users'
+
+
+# =============================================================================
+# USER ROLE ADMIN
+# =============================================================================
+
+@admin.register(UserRole)
+class UserRoleAdmin(admin.ModelAdmin):
+    """Admin interface for user-role assignments."""
+    
+    list_display = ['user', 'role', 'assigned_at', 'assigned_by']
+    list_filter = ['role', 'assigned_at']
+    search_fields = ['user__email', 'role__name']
+    ordering = ['-assigned_at']
+    autocomplete_fields = ['user', 'role', 'assigned_by']
+    readonly_fields = ['assigned_at']
+
+
+# =============================================================================
+# ADMIN SITE CUSTOMIZATION
+# =============================================================================
+
+admin.site.site_header = 'Singapore SMB Platform'
+admin.site.site_title = 'SMB Admin'
+admin.site.index_title = 'Platform Administration'
+
+```
+
+# backend/apps/accounts/serializers.py
+```py
+"""
+DRF Serializers for accounts app.
+
+Provides serialization for:
+- Company: Company CRUD operations
+- User: User management and profile
+- Role: Role management
+- Authentication: Login, token handling
+"""
+from rest_framework import serializers
+from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+
+from .models import Company, User, Role, UserRole
+
+
+# =============================================================================
+# COMPANY SERIALIZERS
+# =============================================================================
+
+class CompanySerializer(serializers.ModelSerializer):
+    """Serializer for Company CRUD operations."""
+    
+    is_gst_registered = serializers.BooleanField(read_only=True)
+    user_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Company
+        fields = [
+            'id', 'name', 'legal_name', 'uen',
+            'gst_registered', 'gst_registration_number', 'gst_registration_date',
+            'is_gst_registered',
+            'email', 'phone', 'website',
+            'address_line1', 'address_line2', 'postal_code',
+            'plan_tier', 'settings',
+            'user_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def get_user_count(self, obj):
+        """Get count of users in this company."""
+        return obj.users.count()
+    
+    def validate_uen(self, value):
+        """Validate Singapore UEN format."""
+        import re
+        if not re.match(r'^[0-9]{8,9}[A-Za-z]$', value):
+            raise serializers.ValidationError(
+                'Invalid UEN format. Example: 201812345A'
+            )
+        return value.upper()
+
+
+class CompanyCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating a new company with owner."""
+    
+    owner_email = serializers.EmailField(write_only=True)
+    owner_password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    owner_first_name = serializers.CharField(write_only=True, required=False)
+    owner_last_name = serializers.CharField(write_only=True, required=False)
+    
+    class Meta:
+        model = Company
+        fields = [
+            'name', 'legal_name', 'uen',
+            'gst_registered', 'gst_registration_number',
+            'email', 'phone',
+            'address_line1', 'postal_code',
+            'owner_email', 'owner_password', 'owner_first_name', 'owner_last_name',
+        ]
+    
+    def validate_owner_password(self, value):
+        """Validate password strength."""
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
+    
+    def create(self, validated_data):
+        """Create company with owner user."""
+        owner_email = validated_data.pop('owner_email')
+        owner_password = validated_data.pop('owner_password')
+        owner_first_name = validated_data.pop('owner_first_name', '')
+        owner_last_name = validated_data.pop('owner_last_name', '')
+        
+        # Create company
+        company = Company.objects.create(**validated_data)
+        
+        # Create owner user
+        user = User.objects.create_user(
+            email=owner_email,
+            password=owner_password,
+            company=company,
+            first_name=owner_first_name,
+            last_name=owner_last_name,
+            is_verified=True,
+        )
+        
+        # Assign owner role
+        owner_role, _ = Role.objects.get_or_create(
+            company=company,
+            name='owner',
+            defaults={
+                'description': 'Company owner with full access',
+                'permissions': ['all'],
+            }
+        )
+        UserRole.objects.create(user=user, role=owner_role)
+        
+        return company
+
+
+# =============================================================================
+# USER SERIALIZERS
+# =============================================================================
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for User read operations."""
+    
+    full_name = serializers.CharField(read_only=True)
+    company_name = serializers.CharField(source='company.name', read_only=True)
+    roles_list = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'first_name', 'last_name', 'full_name',
+            'phone', 'company', 'company_name',
+            'is_active', 'is_verified', 'mfa_enabled',
+            'roles_list',
+            'last_login', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'email', 'company', 'last_login', 'created_at', 'updated_at']
+    
+    def get_roles_list(self, obj):
+        """Get list of role names."""
+        return list(obj.roles.values_list('name', flat=True))
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating new users."""
+    
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    password_confirm = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    role_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False,
+        default=list
+    )
+    
+    class Meta:
+        model = User
+        fields = [
+            'email', 'password', 'password_confirm',
+            'first_name', 'last_name', 'phone',
+            'role_ids',
+        ]
+    
+    def validate(self, data):
+        """Validate passwords match."""
+        if data.get('password') != data.get('password_confirm'):
+            raise serializers.ValidationError({
+                'password_confirm': 'Passwords do not match.'
+            })
+        return data
+    
+    def validate_password(self, value):
+        """Validate password strength."""
+        try:
+            validate_password(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(list(e.messages))
+        return value
+    
+    def create(self, validated_data):
+        """Create user with role assignments."""
+        validated_data.pop('password_confirm')
+        role_ids = validated_data.pop('role_ids', [])
+        password = validated_data.pop('password')
+        
+        # Get company from context (set by view)
+        company = self.context.get('company')
+        
+        user = User.objects.create_user(
+            password=password,
+            company=company,
+            **validated_data
+        )
+        
+        # Assign roles
+        for role_id in role_ids:
+            try:
+                role = Role.objects.get(id=role_id, company=company)
+                UserRole.objects.create(user=user, role=role)
+            except Role.DoesNotExist:
+                pass
+        
+        return user
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating user profile."""
+    
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'phone']
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """Serializer for changing password."""
+    
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+    new_password_confirm = serializers.CharField(write_only=True)
+    
+    def validate_current_password(self, value):
+        """Verify current password."""
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Current password is incorrect.')
+        return value
+    
+    def validate(self, data):
+        """Validate new passwords match and strength."""
+        if data['new_password'] != data['new_password_confirm']:
+            raise serializers.ValidationError({
+                'new_password_confirm': 'Passwords do not match.'
+            })
+        
+        try:
+            validate_password(data['new_password'])
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({
+                'new_password': list(e.messages)
+            })
+        
+        return data
+
+
+# =============================================================================
+# ROLE SERIALIZERS
+# =============================================================================
+
+class RoleSerializer(serializers.ModelSerializer):
+    """Serializer for Role CRUD operations."""
+    
+    user_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Role
+        fields = [
+            'id', 'name', 'description', 'permissions',
+            'is_system', 'user_count',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'is_system', 'created_at', 'updated_at']
+    
+    def get_user_count(self, obj):
+        """Get count of users with this role."""
+        return obj.user_roles.count()
+
+
+class UserRoleSerializer(serializers.ModelSerializer):
+    """Serializer for user-role assignments."""
+    
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    role_name = serializers.CharField(source='role.name', read_only=True)
+    
+    class Meta:
+        model = UserRole
+        fields = ['id', 'user', 'user_email', 'role', 'role_name', 'assigned_at']
+        read_only_fields = ['id', 'assigned_at']
+
+
+# =============================================================================
+# AUTHENTICATION SERIALIZERS
+# =============================================================================
+
+class LoginSerializer(serializers.Serializer):
+    """Serializer for user login."""
+    
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    
+    def validate(self, data):
+        """Authenticate user."""
+        email = data.get('email')
+        password = data.get('password')
+        
+        if email and password:
+            user = authenticate(
+                request=self.context.get('request'),
+                email=email,
+                password=password
+            )
+            
+            if not user:
+                # Check if user exists and is locked
+                try:
+                    existing_user = User.objects.get(email=email)
+                    if existing_user.is_locked:
+                        raise serializers.ValidationError({
+                            'non_field_errors': ['Account is locked. Try again later.']
+                        })
+                    existing_user.record_failed_login()
+                except User.DoesNotExist:
+                    pass
+                
+                raise serializers.ValidationError({
+                    'non_field_errors': ['Invalid email or password.']
+                })
+            
+            if not user.is_active:
+                raise serializers.ValidationError({
+                    'non_field_errors': ['Account is disabled.']
+                })
+            
+            data['user'] = user
+        else:
+            raise serializers.ValidationError({
+                'non_field_errors': ['Email and password are required.']
+            })
+        
+        return data
+
+
+class TokenSerializer(serializers.Serializer):
+    """Serializer for JWT token response."""
+    
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = UserSerializer(read_only=True)
+
+
+class TokenRefreshSerializer(serializers.Serializer):
+    """Serializer for token refresh."""
+    
+    refresh = serializers.CharField()
+
+```
+
+# backend/apps/accounts/services.py
+```py
+"""
+Business logic services for accounts app.
+
+Provides:
+- AuthService: Authentication and token management
+- UserService: User management operations
+- CompanyService: Company management operations
+"""
+from typing import Optional, Tuple
+from datetime import timedelta
+
+from django.utils import timezone
+from django.db import transaction
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from .models import Company, User, Role, UserRole
+
+
+class AuthService:
+    """
+    Service for authentication and token management.
+    
+    Handles:
+    - User authentication
+    - JWT token generation
+    - Token refresh
+    - Login tracking
+    """
+    
+    @staticmethod
+    def authenticate(email: str, password: str, ip_address: str = None) -> Optional[User]:
+        """
+        Authenticate user with email and password.
+        
+        Args:
+            email: User's email address
+            password: User's password
+            ip_address: Client IP for tracking
+        
+        Returns:
+            User if authentication successful, None otherwise
+        """
+        try:
+            user = User.objects.get(email=email.lower())
+        except User.DoesNotExist:
+            return None
+        
+        # Check if account is locked
+        if user.is_locked:
+            return None
+        
+        # Check password
+        if not user.check_password(password):
+            user.record_failed_login()
+            return None
+        
+        # Check if active
+        if not user.is_active:
+            return None
+        
+        # Record successful login
+        user.record_successful_login(ip_address)
+        
+        return user
+    
+    @staticmethod
+    def generate_tokens(user: User) -> dict:
+        """
+        Generate JWT access and refresh tokens for user.
+        
+        Args:
+            user: Authenticated user
+        
+        Returns:
+            Dict with 'access' and 'refresh' tokens
+        """
+        refresh = RefreshToken.for_user(user)
+        
+        # Add custom claims
+        refresh['email'] = user.email
+        if user.company:
+            refresh['company_id'] = str(user.company.id)
+        
+        return {
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        }
+    
+    @staticmethod
+    def refresh_token(refresh_token: str) -> dict:
+        """
+        Generate new access token from refresh token.
+        
+        Args:
+            refresh_token: Valid refresh token
+        
+        Returns:
+            Dict with new 'access' token
+        
+        Raises:
+            Exception if refresh token is invalid
+        """
+        refresh = RefreshToken(refresh_token)
+        
+        return {
+            'access': str(refresh.access_token),
+        }
+    
+    @staticmethod
+    def blacklist_token(refresh_token: str) -> bool:
+        """
+        Blacklist a refresh token (logout).
+        
+        Args:
+            refresh_token: Token to blacklist
+        
+        Returns:
+            True if successful
+        """
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return True
+        except Exception:
+            return False
+
+
+class UserService:
+    """
+    Service for user management operations.
+    
+    Handles:
+    - User creation
+    - User updates
+    - Role assignment
+    - Password management
+    """
+    
+    @staticmethod
+    @transaction.atomic
+    def create_user(
+        email: str,
+        password: str,
+        company: Company,
+        first_name: str = '',
+        last_name: str = '',
+        phone: str = '',
+        role_names: list = None,
+        created_by: User = None
+    ) -> User:
+        """
+        Create a new user with optional role assignment.
+        
+        Args:
+            email: User's email
+            password: User's password
+            company: Company to associate user with
+            first_name: Optional first name
+            last_name: Optional last name
+            phone: Optional phone number
+            role_names: List of role names to assign
+            created_by: User creating this user
+        
+        Returns:
+            Created User instance
+        """
+        user = User.objects.create_user(
+            email=email.lower(),
+            password=password,
+            company=company,
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone,
+        )
+        
+        # Assign roles
+        if role_names:
+            for role_name in role_names:
+                try:
+                    role = Role.objects.get(name=role_name, company=company)
+                    UserRole.objects.create(
+                        user=user,
+                        role=role,
+                        assigned_by=created_by
+                    )
+                except Role.DoesNotExist:
+                    pass
+        
+        return user
+    
+    @staticmethod
+    def update_user(user: User, **kwargs) -> User:
+        """
+        Update user profile fields.
+        
+        Args:
+            user: User to update
+            **kwargs: Fields to update
+        
+        Returns:
+            Updated User instance
+        """
+        allowed_fields = ['first_name', 'last_name', 'phone']
+        
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                setattr(user, field, value)
+        
+        user.save()
+        return user
+    
+    @staticmethod
+    def change_password(user: User, new_password: str) -> User:
+        """
+        Change user's password.
+        
+        Args:
+            user: User to update
+            new_password: New password
+        
+        Returns:
+            Updated User instance
+        """
+        user.set_password(new_password)
+        user.save()
+        return user
+    
+    @staticmethod
+    @transaction.atomic
+    def assign_role(user: User, role: Role, assigned_by: User = None) -> UserRole:
+        """
+        Assign a role to a user.
+        
+        Args:
+            user: User to assign role to
+            role: Role to assign
+            assigned_by: User assigning the role
+        
+        Returns:
+            Created UserRole instance
+        """
+        user_role, created = UserRole.objects.get_or_create(
+            user=user,
+            role=role,
+            defaults={'assigned_by': assigned_by}
+        )
+        return user_role
+    
+    @staticmethod
+    def remove_role(user: User, role: Role) -> bool:
+        """
+        Remove a role from a user.
+        
+        Args:
+            user: User to remove role from
+            role: Role to remove
+        
+        Returns:
+            True if role was removed
+        """
+        deleted, _ = UserRole.objects.filter(user=user, role=role).delete()
+        return deleted > 0
+    
+    @staticmethod
+    def has_permission(user: User, permission: str) -> bool:
+        """
+        Check if user has a specific permission.
+        
+        Args:
+            user: User to check
+            permission: Permission string to check
+        
+        Returns:
+            True if user has the permission
+        """
+        if user.is_superuser:
+            return True
+        
+        for role in user.roles:
+            if role.has_permission(permission):
+                return True
+        
+        return False
+
+
+class CompanyService:
+    """
+    Service for company management operations.
+    
+    Handles:
+    - Company creation with owner
+    - Company settings
+    - Default role creation
+    """
+    
+    DEFAULT_ROLES = [
+        {
+            'name': 'owner',
+            'description': 'Company owner with full access',
+            'permissions': ['all'],
+        },
+        {
+            'name': 'admin',
+            'description': 'Administrative access',
+            'permissions': [
+                'users.view', 'users.create', 'users.update', 'users.delete',
+                'products.view', 'products.create', 'products.update', 'products.delete',
+                'orders.view', 'orders.update',
+                'inventory.view', 'inventory.update',
+                'settings.view', 'settings.update',
+            ],
+        },
+        {
+            'name': 'finance',
+            'description': 'Financial operations',
+            'permissions': [
+                'orders.view', 'invoices.view', 'invoices.create',
+                'payments.view', 'reports.view',
+                'gst.view', 'gst.submit',
+            ],
+        },
+        {
+            'name': 'warehouse',
+            'description': 'Inventory management',
+            'permissions': [
+                'products.view', 'inventory.view', 'inventory.update',
+                'orders.view', 'orders.fulfill',
+            ],
+        },
+        {
+            'name': 'sales',
+            'description': 'Sales operations',
+            'permissions': [
+                'products.view', 'customers.view', 'customers.create',
+                'orders.view', 'orders.create',
+            ],
+        },
+    ]
+    
+    @staticmethod
+    @transaction.atomic
+    def create_company(
+        name: str,
+        uen: str,
+        email: str,
+        owner_email: str,
+        owner_password: str,
+        **company_kwargs
+    ) -> Tuple[Company, User]:
+        """
+        Create a new company with owner and default roles.
+        
+        Args:
+            name: Company name
+            uen: Singapore UEN
+            email: Company contact email
+            owner_email: Owner's email
+            owner_password: Owner's password
+            **company_kwargs: Additional company fields
+        
+        Returns:
+            Tuple of (Company, owner User)
+        """
+        # Create company
+        company = Company.objects.create(
+            name=name,
+            uen=uen.upper(),
+            email=email,
+            **company_kwargs
+        )
+        
+        # Create default roles
+        CompanyService.create_default_roles(company)
+        
+        # Create owner user
+        owner = User.objects.create_user(
+            email=owner_email.lower(),
+            password=owner_password,
+            company=company,
+            is_verified=True,
+        )
+        
+        # Assign owner role
+        owner_role = Role.objects.get(company=company, name='owner')
+        UserRole.objects.create(user=owner, role=owner_role)
+        
+        return company, owner
+    
+    @staticmethod
+    def create_default_roles(company: Company) -> list:
+        """
+        Create default roles for a company.
+        
+        Args:
+            company: Company to create roles for
+        
+        Returns:
+            List of created Role instances
+        """
+        roles = []
+        for role_data in CompanyService.DEFAULT_ROLES:
+            role, created = Role.objects.get_or_create(
+                company=company,
+                name=role_data['name'],
+                defaults={
+                    'description': role_data['description'],
+                    'permissions': role_data['permissions'],
+                }
+            )
+            roles.append(role)
+        return roles
+    
+    @staticmethod
+    def check_gst_threshold(company: Company, annual_revenue: float) -> bool:
+        """
+        Check if company should register for GST.
+        
+        Singapore GST registration is required if annual revenue >= S$1,000,000.
+        
+        Args:
+            company: Company to check
+            annual_revenue: Annual revenue in SGD
+        
+        Returns:
+            True if GST registration is required
+        """
+        from decimal import Decimal
+        from django.conf import settings
+        
+        threshold = getattr(settings, 'GST_REGISTRATION_THRESHOLD', Decimal('1000000'))
+        return Decimal(str(annual_revenue)) >= threshold
+
+```
+
+# backend/apps/accounts/models.py
+```py
+"""
+Models for accounts app.
+
+This module defines:
+- Company: Multi-tenant root entity (Singapore business with UEN)
+- User: Custom user model with email-based authentication
+- Role: RBAC roles with JSON-based permissions
+- UserRole: Junction table for user-role assignments
+"""
+import re
+import uuid
+from decimal import Decimal
+
+from django.db import models
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.contrib.auth.base_user import BaseUserManager
+from django.core.validators import RegexValidator
+from django.utils import timezone
+
+from core.models import BaseModel, SoftDeleteModel
+
+
+# =============================================================================
+# VALIDATORS
+# =============================================================================
+
+uen_validator = RegexValidator(
+    regex=r'^[0-9]{8,9}[A-Za-z]$',
+    message='Enter a valid Singapore UEN (e.g., 201812345A)'
+)
+
+phone_validator = RegexValidator(
+    regex=r'^\+?[0-9]{8,15}$',
+    message='Enter a valid phone number'
+)
+
+
+# =============================================================================
+# COMPANY MODEL
+# =============================================================================
+
+class Company(SoftDeleteModel):
+    """
+    Company entity - the root of multi-tenant data isolation.
+    
+    Represents a Singapore business registered with ACRA.
+    All business data (products, orders, etc.) belongs to a Company.
+    
+    Attributes:
+        uen: Singapore Unique Entity Number (required, unique)
+        gst_registered: Whether company is GST-registered
+        settings: JSON field for company-specific configurations
+    """
+    
+    class PlanTier(models.TextChoices):
+        LITE = 'lite', 'Lite (Free)'
+        STANDARD = 'standard', 'Standard'
+        ADVANCED = 'advanced', 'Advanced'
+    
+    # Basic Information
+    name = models.CharField(
+        max_length=200,
+        help_text="Trading name"
+    )
+    legal_name = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Registered legal name"
+    )
+    uen = models.CharField(
+        max_length=10,
+        unique=True,
+        validators=[uen_validator],
+        help_text="Singapore Unique Entity Number (e.g., 201812345A)"
+    )
+    
+    # GST Information
+    gst_registered = models.BooleanField(
+        default=False,
+        help_text="Is the company registered for GST?"
+    )
+    gst_registration_number = models.CharField(
+        max_length=15,
+        blank=True,
+        help_text="GST registration number (if registered)"
+    )
+    gst_registration_date = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date of GST registration"
+    )
+    
+    # Contact Information
+    email = models.EmailField(
+        help_text="Primary contact email"
+    )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        validators=[phone_validator],
+        help_text="Primary contact phone"
+    )
+    website = models.URLField(
+        blank=True,
+        help_text="Company website URL"
+    )
+    
+    # Address
+    address_line1 = models.CharField(max_length=255, blank=True)
+    address_line2 = models.CharField(max_length=255, blank=True)
+    postal_code = models.CharField(
+        max_length=6,
+        blank=True,
+        help_text="Singapore postal code (6 digits)"
+    )
+    
+    # Subscription
+    plan_tier = models.CharField(
+        max_length=20,
+        choices=PlanTier.choices,
+        default=PlanTier.LITE,
+        help_text="Subscription plan tier"
+    )
+    
+    # Settings (JSONB for flexibility)
+    settings = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Company-specific settings"
+    )
+    
+    class Meta:
+        db_table = 'core_companies'
+        verbose_name = 'Company'
+        verbose_name_plural = 'Companies'
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['uen']),
+            models.Index(fields=['gst_registered']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} ({self.uen})"
+    
+    @property
+    def is_gst_registered(self) -> bool:
+        """Check if company is currently GST registered."""
+        return self.gst_registered and bool(self.gst_registration_number)
+    
+    def get_setting(self, key: str, default=None):
+        """Get a setting value from the settings JSON."""
+        return self.settings.get(key, default)
+    
+    def set_setting(self, key: str, value):
+        """Set a setting value in the settings JSON."""
+        self.settings[key] = value
+        self.save(update_fields=['settings', 'updated_at'])
+
+
+# =============================================================================
+# USER MANAGER
+# =============================================================================
+
+class UserManager(BaseUserManager):
+    """
+    Custom user manager for email-based authentication.
+    """
+    
+    def create_user(self, email, password=None, **extra_fields):
+        """Create and save a regular user."""
+        if not email:
+            raise ValueError('Email is required')
+        
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+    
+    def create_superuser(self, email, password=None, **extra_fields):
+        """Create and save a superuser."""
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+        
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+        
+        return self.create_user(email, password, **extra_fields)
+
+
+# =============================================================================
+# USER MODEL
+# =============================================================================
+
+class User(AbstractBaseUser, PermissionsMixin, BaseModel):
+    """
+    Custom user model with email-based authentication.
+    
+    Uses email instead of username for authentication.
+    Associated with a Company for multi-tenant isolation.
+    
+    Attributes:
+        email: Primary identifier (unique)
+        company: Associated company (optional for superusers)
+        mfa_enabled: Whether MFA is enabled for this user
+    """
+    
+    # Authentication
+    email = models.EmailField(
+        unique=True,
+        help_text="Email address (used for login)"
+    )
+    
+    # Company association (null for superusers)
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text="Company this user belongs to"
+    )
+    
+    # Profile
+    first_name = models.CharField(max_length=100, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        validators=[phone_validator]
+    )
+    
+    # Status
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Whether user can log in"
+    )
+    is_staff = models.BooleanField(
+        default=False,
+        help_text="Can access admin site"
+    )
+    is_verified = models.BooleanField(
+        default=False,
+        help_text="Email has been verified"
+    )
+    
+    # Security
+    mfa_enabled = models.BooleanField(
+        default=False,
+        help_text="Multi-factor authentication enabled"
+    )
+    mfa_secret = models.CharField(
+        max_length=32,
+        blank=True,
+        help_text="TOTP secret for MFA"
+    )
+    failed_login_attempts = models.PositiveIntegerField(
+        default=0,
+        help_text="Number of consecutive failed login attempts"
+    )
+    locked_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Account locked until this time"
+    )
+    last_login_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP address of last login"
+    )
+    
+    # Manager
+    objects = UserManager()
+    
+    # Authentication settings
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []  # Email is already required via USERNAME_FIELD
+    
+    class Meta:
+        db_table = 'core_users'
+        verbose_name = 'User'
+        verbose_name_plural = 'Users'
+        ordering = ['email']
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['company']),
+        ]
+    
+    def __str__(self):
+        return self.email
+    
+    @property
+    def full_name(self) -> str:
+        """Get user's full name."""
+        name = f"{self.first_name} {self.last_name}".strip()
+        return name or self.email
+    
+    @property
+    def is_locked(self) -> bool:
+        """Check if account is currently locked."""
+        if self.locked_until is None:
+            return False
+        return timezone.now() < self.locked_until
+    
+    def record_failed_login(self):
+        """Record a failed login attempt."""
+        self.failed_login_attempts += 1
+        
+        # Lock account after 5 failed attempts
+        if self.failed_login_attempts >= 5:
+            self.locked_until = timezone.now() + timezone.timedelta(minutes=30)
+        
+        self.save(update_fields=['failed_login_attempts', 'locked_until', 'updated_at'])
+    
+    def record_successful_login(self, ip_address=None):
+        """Record a successful login."""
+        self.failed_login_attempts = 0
+        self.locked_until = None
+        self.last_login = timezone.now()
+        self.last_login_ip = ip_address
+        self.save(update_fields=[
+            'failed_login_attempts', 'locked_until', 
+            'last_login', 'last_login_ip', 'updated_at'
+        ])
+
+
+# =============================================================================
+# ROLE MODEL
+# =============================================================================
+
+class Role(BaseModel):
+    """
+    Role for RBAC (Role-Based Access Control).
+    
+    Permissions are stored as a JSON array of permission strings.
+    Each company can have its own custom roles.
+    
+    Built-in roles (is_system=True):
+    - owner: Full access
+    - admin: Administrative access
+    - finance: Financial operations
+    - warehouse: Inventory management
+    - sales: Sales and customer management
+    """
+    
+    company = models.ForeignKey(
+        Company,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='roles',
+        help_text="Company this role belongs to (null for system roles)"
+    )
+    
+    name = models.CharField(
+        max_length=50,
+        help_text="Role name (e.g., 'admin', 'finance')"
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Description of this role"
+    )
+    
+    # Permissions as JSON array
+    permissions = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of permission strings"
+    )
+    
+    # System flag
+    is_system = models.BooleanField(
+        default=False,
+        help_text="Whether this is a built-in system role"
+    )
+    
+    class Meta:
+        db_table = 'core_roles'
+        verbose_name = 'Role'
+        verbose_name_plural = 'Roles'
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'name'],
+                name='unique_role_per_company'
+            )
+        ]
+    
+    def __str__(self):
+        if self.company:
+            return f"{self.name} ({self.company.name})"
+        return f"{self.name} (System)"
+    
+    def has_permission(self, permission: str) -> bool:
+        """Check if this role has a specific permission."""
+        if 'all' in self.permissions:
+            return True
+        return permission in self.permissions
+    
+    def add_permission(self, permission: str):
+        """Add a permission to this role."""
+        if permission not in self.permissions:
+            self.permissions.append(permission)
+            self.save(update_fields=['permissions', 'updated_at'])
+    
+    def remove_permission(self, permission: str):
+        """Remove a permission from this role."""
+        if permission in self.permissions:
+            self.permissions.remove(permission)
+            self.save(update_fields=['permissions', 'updated_at'])
+
+
+# =============================================================================
+# USER-ROLE JUNCTION
+# =============================================================================
+
+class UserRole(BaseModel):
+    """
+    Junction table for User-Role many-to-many relationship.
+    
+    Tracks when role was assigned and by whom.
+    """
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='user_roles'
+    )
+    role = models.ForeignKey(
+        Role,
+        on_delete=models.CASCADE,
+        related_name='user_roles'
+    )
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='roles_assigned',
+        help_text="User who assigned this role"
+    )
+    assigned_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this role was assigned"
+    )
+    
+    class Meta:
+        db_table = 'core_user_roles'
+        verbose_name = 'User Role'
+        verbose_name_plural = 'User Roles'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'role'],
+                name='unique_user_role'
+            )
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.role.name}"
+
+
+# =============================================================================
+# ADD ROLES RELATION TO USER
+# =============================================================================
+
+# Add a property to User for easy role access
+User.add_to_class(
+    'roles',
+    property(lambda self: Role.objects.filter(user_roles__user=self))
+)
+
+```
+
+# backend/apps/accounts/views.py
+```py
+"""
+DRF Views for accounts app.
+
+Provides ViewSets and APIViews for:
+- Company management
+- User management
+- Role management
+- Authentication (login, logout, token refresh)
+"""
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+from core.permissions import IsCompanyMember, IsAdminUser, HasAnyRole
+from .models import Company, User, Role, UserRole
+from .serializers import (
+    CompanySerializer, CompanyCreateSerializer,
+    UserSerializer, UserCreateSerializer, UserUpdateSerializer,
+    PasswordChangeSerializer,
+    RoleSerializer, UserRoleSerializer,
+    LoginSerializer, TokenSerializer, TokenRefreshSerializer,
+)
+from .services import AuthService, UserService, CompanyService
+
+
+# =============================================================================
+# COMPANY VIEWSET
+# =============================================================================
+
+class CompanyViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Company CRUD operations.
+    
+    list: List companies (admin only)
+    create: Create new company with owner
+    retrieve: Get company details
+    update: Update company
+    """
+    serializer_class = CompanySerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return companies based on user access."""
+        user = self.request.user
+        
+        if user.is_superuser:
+            return Company.objects.all()
+        
+        # Regular users can only see their own company
+        if user.company:
+            return Company.objects.filter(id=user.company.id)
+        
+        return Company.objects.none()
+    
+    def get_serializer_class(self):
+        """Use different serializer for create."""
+        if self.action == 'create':
+            return CompanyCreateSerializer
+        return CompanySerializer
+    
+    def get_permissions(self):
+        """Allow unauthenticated company creation (registration)."""
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+    
+    @action(detail=True, methods=['get'])
+    def users(self, request, pk=None):
+        """Get all users in the company."""
+        company = self.get_object()
+        users = company.users.all()
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['get'])
+    def roles(self, request, pk=None):
+        """Get all roles in the company."""
+        company = self.get_object()
+        roles = company.roles.all()
+        serializer = RoleSerializer(roles, many=True)
+        return Response(serializer.data)
+
+
+# =============================================================================
+# USER VIEWSET
+# =============================================================================
+
+class UserViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for User CRUD operations.
+    
+    Filtered by company for multi-tenant isolation.
+    """
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsCompanyMember]
+    
+    def get_queryset(self):
+        """Return users in the current company."""
+        user = self.request.user
+        
+        if user.is_superuser:
+            return User.objects.all()
+        
+        if user.company:
+            return User.objects.filter(company=user.company, is_active=True)
+        
+        return User.objects.none()
+    
+    def get_serializer_class(self):
+        """Use different serializers based on action."""
+        if self.action == 'create':
+            return UserCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return UserUpdateSerializer
+        return UserSerializer
+    
+    def get_serializer_context(self):
+        """Add company to serializer context."""
+        context = super().get_serializer_context()
+        if self.request.user.is_authenticated:
+            context['company'] = self.request.user.company
+        return context
+    
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        """Get current user's profile."""
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['patch'])
+    def update_profile(self, request):
+        """Update current user's profile."""
+        serializer = UserUpdateSerializer(
+            request.user,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(request.user).data)
+    
+    @action(detail=False, methods=['post'])
+    def change_password(self, request):
+        """Change current user's password."""
+        serializer = PasswordChangeSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        UserService.change_password(
+            request.user,
+            serializer.validated_data['new_password']
+        )
+        
+        return Response({'message': 'Password changed successfully.'})
+    
+    @action(detail=True, methods=['post'])
+    def assign_role(self, request, pk=None):
+        """Assign a role to a user."""
+        user = self.get_object()
+        role_id = request.data.get('role_id')
+        
+        try:
+            role = Role.objects.get(id=role_id, company=request.user.company)
+        except Role.DoesNotExist:
+            return Response(
+                {'error': 'Role not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        UserService.assign_role(user, role, request.user)
+        return Response({'message': f'Role {role.name} assigned.'})
+    
+    @action(detail=True, methods=['post'])
+    def remove_role(self, request, pk=None):
+        """Remove a role from a user."""
+        user = self.get_object()
+        role_id = request.data.get('role_id')
+        
+        try:
+            role = Role.objects.get(id=role_id, company=request.user.company)
+        except Role.DoesNotExist:
+            return Response(
+                {'error': 'Role not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        UserService.remove_role(user, role)
+        return Response({'message': f'Role {role.name} removed.'})
+
+
+# =============================================================================
+# ROLE VIEWSET
+# =============================================================================
+
+class RoleViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Role CRUD operations.
+    
+    Only admins can manage roles.
+    """
+    serializer_class = RoleSerializer
+    permission_classes = [IsAuthenticated, IsCompanyMember]
+    
+    def get_queryset(self):
+        """Return roles for the current company."""
+        user = self.request.user
+        
+        if user.is_superuser:
+            return Role.objects.all()
+        
+        if user.company:
+            return Role.objects.filter(company=user.company)
+        
+        return Role.objects.none()
+    
+    def perform_create(self, serializer):
+        """Set company when creating role."""
+        serializer.save(company=self.request.user.company)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Prevent deletion of system roles."""
+        role = self.get_object()
+        if role.is_system:
+            return Response(
+                {'error': 'Cannot delete system roles.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+
+# =============================================================================
+# AUTHENTICATION VIEWS
+# =============================================================================
+
+class LoginView(APIView):
+    """
+    User login endpoint.
+    
+    POST /api/v1/accounts/auth/login/
+    
+    Request Body:
+        email: User's email
+        password: User's password
+    
+    Response:
+        access: JWT access token
+        refresh: JWT refresh token
+        user: User details
+    """
+    permission_classes = [AllowAny]
+    serializer_class = LoginSerializer
+    
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        
+        user = serializer.validated_data['user']
+        
+        # Get client IP
+        ip_address = request.META.get('HTTP_X_FORWARDED_FOR')
+        if ip_address:
+            ip_address = ip_address.split(',')[0]
+        else:
+            ip_address = request.META.get('REMOTE_ADDR')
+        
+        # Record login and generate tokens
+        user.record_successful_login(ip_address)
+        tokens = AuthService.generate_tokens(user)
+        
+        return Response({
+            'access': tokens['access'],
+            'refresh': tokens['refresh'],
+            'user': UserSerializer(user).data,
+        })
+
+
+class LogoutView(APIView):
+    """
+    User logout endpoint.
+    
+    POST /api/v1/accounts/auth/logout/
+    
+    Request Body:
+        refresh: JWT refresh token to blacklist
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+        
+        if refresh_token:
+            AuthService.blacklist_token(refresh_token)
+        
+        return Response({'message': 'Logged out successfully.'})
+
+
+class TokenRefreshView(APIView):
+    """
+    Token refresh endpoint.
+    
+    POST /api/v1/accounts/auth/refresh/
+    
+    Request Body:
+        refresh: JWT refresh token
+    
+    Response:
+        access: New JWT access token
+    """
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        refresh_token = request.data.get('refresh')
+        
+        if not refresh_token:
+            return Response(
+                {'error': 'Refresh token is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            tokens = AuthService.refresh_token(refresh_token)
+            return Response(tokens)
+        except (InvalidToken, TokenError) as e:
+            return Response(
+                {'error': 'Invalid or expired token.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+
+class CurrentUserView(APIView):
+    """
+    Get current authenticated user.
+    
+    GET /api/v1/accounts/auth/me/
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        return Response(UserSerializer(request.user).data)
+
+```
+
+# backend/apps/accounts/urls.py
+```py
+"""
+URL routing for accounts app.
+
+API Endpoints:
+- /api/v1/accounts/companies/ - Company CRUD
+- /api/v1/accounts/users/ - User CRUD
+- /api/v1/accounts/roles/ - Role CRUD
+- /api/v1/accounts/auth/login/ - Login
+- /api/v1/accounts/auth/logout/ - Logout
+- /api/v1/accounts/auth/refresh/ - Token refresh
+- /api/v1/accounts/auth/me/ - Current user
+"""
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+
+from .views import (
+    CompanyViewSet, UserViewSet, RoleViewSet,
+    LoginView, LogoutView, TokenRefreshView, CurrentUserView,
+)
+
+app_name = 'accounts'
+
+# Router for ViewSets
+router = DefaultRouter()
+router.register(r'companies', CompanyViewSet, basename='company')
+router.register(r'users', UserViewSet, basename='user')
+router.register(r'roles', RoleViewSet, basename='role')
+
+# URL patterns
+urlpatterns = [
+    # ViewSet routes
+    path('', include(router.urls)),
+    
+    # Authentication endpoints
+    path('auth/login/', LoginView.as_view(), name='login'),
+    path('auth/logout/', LogoutView.as_view(), name='logout'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('auth/me/', CurrentUserView.as_view(), name='current-user'),
+]
+
+```
+
+# backend/apps/__init__.py
+```py
+"""Apps package for Singapore SMB E-commerce Platform."""
+
+```
+
+# backend/uv.lock
+```lock
 version = 1
 revision = 3
 requires-python = ">=3.12"
@@ -334,80 +3298,6 @@ wheels = [
 ]
 
 [[package]]
-name = "coverage"
-version = "7.13.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b6/45/2c665ca77ec32ad67e25c77daf1cee28ee4558f3bc571cdbaf88a00b9f23/coverage-7.13.0.tar.gz", hash = "sha256:a394aa27f2d7ff9bc04cf703817773a59ad6dfbd577032e690f961d2460ee936", size = 820905, upload-time = "2025-12-08T13:14:38.055Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/f1/2619559f17f31ba00fc40908efd1fbf1d0a5536eb75dc8341e7d660a08de/coverage-7.13.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:0b3d67d31383c4c68e19a88e28fc4c2e29517580f1b0ebec4a069d502ce1e0bf", size = 218274, upload-time = "2025-12-08T13:12:52.095Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/11/30d71ae5d6e949ff93b2a79a2c1b4822e00423116c5c6edfaeef37301396/coverage-7.13.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:581f086833d24a22c89ae0fe2142cfaa1c92c930adf637ddf122d55083fb5a0f", size = 218638, upload-time = "2025-12-08T13:12:53.418Z" },
-    { url = "https://files.pythonhosted.org/packages/79/c2/fce80fc6ded8d77e53207489d6065d0fed75db8951457f9213776615e0f5/coverage-7.13.0-cp312-cp312-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:0a3a30f0e257df382f5f9534d4ce3d4cf06eafaf5192beb1a7bd066cb10e78fb", size = 250129, upload-time = "2025-12-08T13:12:54.744Z" },
-    { url = "https://files.pythonhosted.org/packages/5b/b6/51b5d1eb6fcbb9a1d5d6984e26cbe09018475c2922d554fd724dd0f056ee/coverage-7.13.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:583221913fbc8f53b88c42e8dbb8fca1d0f2e597cb190ce45916662b8b9d9621", size = 252885, upload-time = "2025-12-08T13:12:56.401Z" },
-    { url = "https://files.pythonhosted.org/packages/0d/f8/972a5affea41de798691ab15d023d3530f9f56a72e12e243f35031846ff7/coverage-7.13.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:5f5d9bd30756fff3e7216491a0d6d520c448d5124d3d8e8f56446d6412499e74", size = 253974, upload-time = "2025-12-08T13:12:57.718Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/56/116513aee860b2c7968aa3506b0f59b22a959261d1dbf3aea7b4450a7520/coverage-7.13.0-cp312-cp312-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:a23e5a1f8b982d56fa64f8e442e037f6ce29322f1f9e6c2344cd9e9f4407ee57", size = 250538, upload-time = "2025-12-08T13:12:59.254Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/75/074476d64248fbadf16dfafbf93fdcede389ec821f74ca858d7c87d2a98c/coverage-7.13.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:9b01c22bc74a7fb44066aaf765224c0d933ddf1f5047d6cdfe4795504a4493f8", size = 251912, upload-time = "2025-12-08T13:13:00.604Z" },
-    { url = "https://files.pythonhosted.org/packages/f2/d2/aa4f8acd1f7c06024705c12609d8698c51b27e4d635d717cd1934c9668e2/coverage-7.13.0-cp312-cp312-musllinux_1_2_i686.whl", hash = "sha256:898cce66d0836973f48dda4e3514d863d70142bdf6dfab932b9b6a90ea5b222d", size = 250054, upload-time = "2025-12-08T13:13:01.892Z" },
-    { url = "https://files.pythonhosted.org/packages/19/98/8df9e1af6a493b03694a1e8070e024e7d2cdc77adedc225a35e616d505de/coverage-7.13.0-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:3ab483ea0e251b5790c2aac03acde31bff0c736bf8a86829b89382b407cd1c3b", size = 249619, upload-time = "2025-12-08T13:13:03.236Z" },
-    { url = "https://files.pythonhosted.org/packages/d8/71/f8679231f3353018ca66ef647fa6fe7b77e6bff7845be54ab84f86233363/coverage-7.13.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:1d84e91521c5e4cb6602fe11ece3e1de03b2760e14ae4fcf1a4b56fa3c801fcd", size = 251496, upload-time = "2025-12-08T13:13:04.511Z" },
-    { url = "https://files.pythonhosted.org/packages/04/86/9cb406388034eaf3c606c22094edbbb82eea1fa9d20c0e9efadff20d0733/coverage-7.13.0-cp312-cp312-win32.whl", hash = "sha256:193c3887285eec1dbdb3f2bd7fbc351d570ca9c02ca756c3afbc71b3c98af6ef", size = 220808, upload-time = "2025-12-08T13:13:06.422Z" },
-    { url = "https://files.pythonhosted.org/packages/1c/59/af483673df6455795daf5f447c2f81a3d2fcfc893a22b8ace983791f6f34/coverage-7.13.0-cp312-cp312-win_amd64.whl", hash = "sha256:4f3e223b2b2db5e0db0c2b97286aba0036ca000f06aca9b12112eaa9af3d92ae", size = 221616, upload-time = "2025-12-08T13:13:07.95Z" },
-    { url = "https://files.pythonhosted.org/packages/64/b0/959d582572b30a6830398c60dd419c1965ca4b5fb38ac6b7093a0d50ca8d/coverage-7.13.0-cp312-cp312-win_arm64.whl", hash = "sha256:086cede306d96202e15a4b77ace8472e39d9f4e5f9fd92dd4fecdfb2313b2080", size = 220261, upload-time = "2025-12-08T13:13:09.581Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/cc/bce226595eb3bf7d13ccffe154c3c487a22222d87ff018525ab4dd2e9542/coverage-7.13.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:28ee1c96109974af104028a8ef57cec21447d42d0e937c0275329272e370ebcf", size = 218297, upload-time = "2025-12-08T13:13:10.977Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/9f/73c4d34600aae03447dff3d7ad1d0ac649856bfb87d1ca7d681cfc913f9e/coverage-7.13.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:d1e97353dcc5587b85986cda4ff3ec98081d7e84dd95e8b2a6d59820f0545f8a", size = 218673, upload-time = "2025-12-08T13:13:12.562Z" },
-    { url = "https://files.pythonhosted.org/packages/63/ab/8fa097db361a1e8586535ae5073559e6229596b3489ec3ef2f5b38df8cb2/coverage-7.13.0-cp313-cp313-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:99acd4dfdfeb58e1937629eb1ab6ab0899b131f183ee5f23e0b5da5cba2fec74", size = 249652, upload-time = "2025-12-08T13:13:13.909Z" },
-    { url = "https://files.pythonhosted.org/packages/90/3a/9bfd4de2ff191feb37ef9465855ca56a6f2f30a3bca172e474130731ac3d/coverage-7.13.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:ff45e0cd8451e293b63ced93161e189780baf444119391b3e7d25315060368a6", size = 252251, upload-time = "2025-12-08T13:13:15.553Z" },
-    { url = "https://files.pythonhosted.org/packages/df/61/b5d8105f016e1b5874af0d7c67542da780ccd4a5f2244a433d3e20ceb1ad/coverage-7.13.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f4f72a85316d8e13234cafe0a9f81b40418ad7a082792fa4165bd7d45d96066b", size = 253492, upload-time = "2025-12-08T13:13:16.849Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/b8/0fad449981803cc47a4694768b99823fb23632150743f9c83af329bb6090/coverage-7.13.0-cp313-cp313-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:11c21557d0e0a5a38632cbbaca5f008723b26a89d70db6315523df6df77d6232", size = 249850, upload-time = "2025-12-08T13:13:18.142Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/e9/8d68337c3125014d918cf4327d5257553a710a2995a6a6de2ac77e5aa429/coverage-7.13.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:76541dc8d53715fb4f7a3a06b34b0dc6846e3c69bc6204c55653a85dd6220971", size = 251633, upload-time = "2025-12-08T13:13:19.56Z" },
-    { url = "https://files.pythonhosted.org/packages/55/14/d4112ab26b3a1bc4b3c1295d8452dcf399ed25be4cf649002fb3e64b2d93/coverage-7.13.0-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:6e9e451dee940a86789134b6b0ffbe31c454ade3b849bb8a9d2cca2541a8e91d", size = 249586, upload-time = "2025-12-08T13:13:20.883Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/a9/22b0000186db663b0d82f86c2f1028099ae9ac202491685051e2a11a5218/coverage-7.13.0-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:5c67dace46f361125e6b9cace8fe0b729ed8479f47e70c89b838d319375c8137", size = 249412, upload-time = "2025-12-08T13:13:22.22Z" },
-    { url = "https://files.pythonhosted.org/packages/a1/2e/42d8e0d9e7527fba439acdc6ed24a2b97613b1dc85849b1dd935c2cffef0/coverage-7.13.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:f59883c643cb19630500f57016f76cfdcd6845ca8c5b5ea1f6e17f74c8e5f511", size = 251191, upload-time = "2025-12-08T13:13:23.899Z" },
-    { url = "https://files.pythonhosted.org/packages/a4/af/8c7af92b1377fd8860536aadd58745119252aaaa71a5213e5a8e8007a9f5/coverage-7.13.0-cp313-cp313-win32.whl", hash = "sha256:58632b187be6f0be500f553be41e277712baa278147ecb7559983c6d9faf7ae1", size = 220829, upload-time = "2025-12-08T13:13:25.182Z" },
-    { url = "https://files.pythonhosted.org/packages/58/f9/725e8bf16f343d33cbe076c75dc8370262e194ff10072c0608b8e5cf33a3/coverage-7.13.0-cp313-cp313-win_amd64.whl", hash = "sha256:73419b89f812f498aca53f757dd834919b48ce4799f9d5cad33ca0ae442bdb1a", size = 221640, upload-time = "2025-12-08T13:13:26.836Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/ff/e98311000aa6933cc79274e2b6b94a2fe0fe3434fca778eba82003675496/coverage-7.13.0-cp313-cp313-win_arm64.whl", hash = "sha256:eb76670874fdd6091eedcc856128ee48c41a9bbbb9c3f1c7c3cf169290e3ffd6", size = 220269, upload-time = "2025-12-08T13:13:28.116Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/cf/bbaa2e1275b300343ea865f7d424cc0a2e2a1df6925a070b2b2d5d765330/coverage-7.13.0-cp313-cp313t-macosx_10_13_x86_64.whl", hash = "sha256:6e63ccc6e0ad8986386461c3c4b737540f20426e7ec932f42e030320896c311a", size = 218990, upload-time = "2025-12-08T13:13:29.463Z" },
-    { url = "https://files.pythonhosted.org/packages/21/1d/82f0b3323b3d149d7672e7744c116e9c170f4957e0c42572f0366dbb4477/coverage-7.13.0-cp313-cp313t-macosx_11_0_arm64.whl", hash = "sha256:494f5459ffa1bd45e18558cd98710c36c0b8fbfa82a5eabcbe671d80ecffbfe8", size = 219340, upload-time = "2025-12-08T13:13:31.524Z" },
-    { url = "https://files.pythonhosted.org/packages/fb/e3/fe3fd4702a3832a255f4d43013eacb0ef5fc155a5960ea9269d8696db28b/coverage-7.13.0-cp313-cp313t-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:06cac81bf10f74034e055e903f5f946e3e26fc51c09fc9f584e4a1605d977053", size = 260638, upload-time = "2025-12-08T13:13:32.965Z" },
-    { url = "https://files.pythonhosted.org/packages/ad/01/63186cb000307f2b4da463f72af9b85d380236965574c78e7e27680a2593/coverage-7.13.0-cp313-cp313t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:f2ffc92b46ed6e6760f1d47a71e56b5664781bc68986dbd1836b2b70c0ce2071", size = 262705, upload-time = "2025-12-08T13:13:34.378Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/a1/c0dacef0cc865f2455d59eed3548573ce47ed603205ffd0735d1d78b5906/coverage-7.13.0-cp313-cp313t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0602f701057c6823e5db1b74530ce85f17c3c5be5c85fc042ac939cbd909426e", size = 265125, upload-time = "2025-12-08T13:13:35.73Z" },
-    { url = "https://files.pythonhosted.org/packages/ef/92/82b99223628b61300bd382c205795533bed021505eab6dd86e11fb5d7925/coverage-7.13.0-cp313-cp313t-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:25dc33618d45456ccb1d37bce44bc78cf269909aa14c4db2e03d63146a8a1493", size = 259844, upload-time = "2025-12-08T13:13:37.69Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/2c/89b0291ae4e6cd59ef042708e1c438e2290f8c31959a20055d8768349ee2/coverage-7.13.0-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:71936a8b3b977ddd0b694c28c6a34f4fff2e9dd201969a4ff5d5fc7742d614b0", size = 262700, upload-time = "2025-12-08T13:13:39.525Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/f9/a5f992efae1996245e796bae34ceb942b05db275e4b34222a9a40b9fbd3b/coverage-7.13.0-cp313-cp313t-musllinux_1_2_i686.whl", hash = "sha256:936bc20503ce24770c71938d1369461f0c5320830800933bc3956e2a4ded930e", size = 260321, upload-time = "2025-12-08T13:13:41.172Z" },
-    { url = "https://files.pythonhosted.org/packages/4c/89/a29f5d98c64fedbe32e2ac3c227fbf78edc01cc7572eee17d61024d89889/coverage-7.13.0-cp313-cp313t-musllinux_1_2_riscv64.whl", hash = "sha256:af0a583efaacc52ae2521f8d7910aff65cdb093091d76291ac5820d5e947fc1c", size = 259222, upload-time = "2025-12-08T13:13:43.282Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/c3/940fe447aae302a6701ee51e53af7e08b86ff6eed7631e5740c157ee22b9/coverage-7.13.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:f1c23e24a7000da892a312fb17e33c5f94f8b001de44b7cf8ba2e36fbd15859e", size = 261411, upload-time = "2025-12-08T13:13:44.72Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/31/12a4aec689cb942a89129587860ed4d0fd522d5fda81237147fde554b8ae/coverage-7.13.0-cp313-cp313t-win32.whl", hash = "sha256:5f8a0297355e652001015e93be345ee54393e45dc3050af4a0475c5a2b767d46", size = 221505, upload-time = "2025-12-08T13:13:46.332Z" },
-    { url = "https://files.pythonhosted.org/packages/65/8c/3b5fe3259d863572d2b0827642c50c3855d26b3aefe80bdc9eba1f0af3b0/coverage-7.13.0-cp313-cp313t-win_amd64.whl", hash = "sha256:6abb3a4c52f05e08460bd9acf04fec027f8718ecaa0d09c40ffbc3fbd70ecc39", size = 222569, upload-time = "2025-12-08T13:13:47.79Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/39/f71fa8316a96ac72fc3908839df651e8eccee650001a17f2c78cdb355624/coverage-7.13.0-cp313-cp313t-win_arm64.whl", hash = "sha256:3ad968d1e3aa6ce5be295ab5fe3ae1bf5bb4769d0f98a80a0252d543a2ef2e9e", size = 220841, upload-time = "2025-12-08T13:13:49.243Z" },
-    { url = "https://files.pythonhosted.org/packages/f8/4b/9b54bedda55421449811dcd5263a2798a63f48896c24dfb92b0f1b0845bd/coverage-7.13.0-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:453b7ec753cf5e4356e14fe858064e5520c460d3bbbcb9c35e55c0d21155c256", size = 218343, upload-time = "2025-12-08T13:13:50.811Z" },
-    { url = "https://files.pythonhosted.org/packages/59/df/c3a1f34d4bba2e592c8979f924da4d3d4598b0df2392fbddb7761258e3dc/coverage-7.13.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:af827b7cbb303e1befa6c4f94fd2bf72f108089cfa0f8abab8f4ca553cf5ca5a", size = 218672, upload-time = "2025-12-08T13:13:52.284Z" },
-    { url = "https://files.pythonhosted.org/packages/07/62/eec0659e47857698645ff4e6ad02e30186eb8afd65214fd43f02a76537cb/coverage-7.13.0-cp314-cp314-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:9987a9e4f8197a1000280f7cc089e3ea2c8b3c0a64d750537809879a7b4ceaf9", size = 249715, upload-time = "2025-12-08T13:13:53.791Z" },
-    { url = "https://files.pythonhosted.org/packages/23/2d/3c7ff8b2e0e634c1f58d095f071f52ed3c23ff25be524b0ccae8b71f99f8/coverage-7.13.0-cp314-cp314-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:3188936845cd0cb114fa6a51842a304cdbac2958145d03be2377ec41eb285d19", size = 252225, upload-time = "2025-12-08T13:13:55.274Z" },
-    { url = "https://files.pythonhosted.org/packages/aa/ac/fb03b469d20e9c9a81093575003f959cf91a4a517b783aab090e4538764b/coverage-7.13.0-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:a2bdb3babb74079f021696cb46b8bb5f5661165c385d3a238712b031a12355be", size = 253559, upload-time = "2025-12-08T13:13:57.161Z" },
-    { url = "https://files.pythonhosted.org/packages/29/62/14afa9e792383c66cc0a3b872a06ded6e4ed1079c7d35de274f11d27064e/coverage-7.13.0-cp314-cp314-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7464663eaca6adba4175f6c19354feea61ebbdd735563a03d1e472c7072d27bb", size = 249724, upload-time = "2025-12-08T13:13:58.692Z" },
-    { url = "https://files.pythonhosted.org/packages/31/b7/333f3dab2939070613696ab3ee91738950f0467778c6e5a5052e840646b7/coverage-7.13.0-cp314-cp314-musllinux_1_2_aarch64.whl", hash = "sha256:8069e831f205d2ff1f3d355e82f511eb7c5522d7d413f5db5756b772ec8697f8", size = 251582, upload-time = "2025-12-08T13:14:00.642Z" },
-    { url = "https://files.pythonhosted.org/packages/81/cb/69162bda9381f39b2287265d7e29ee770f7c27c19f470164350a38318764/coverage-7.13.0-cp314-cp314-musllinux_1_2_i686.whl", hash = "sha256:6fb2d5d272341565f08e962cce14cdf843a08ac43bd621783527adb06b089c4b", size = 249538, upload-time = "2025-12-08T13:14:02.556Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/76/350387b56a30f4970abe32b90b2a434f87d29f8b7d4ae40d2e8a85aacfb3/coverage-7.13.0-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:5e70f92ef89bac1ac8a99b3324923b4749f008fdbd7aa9cb35e01d7a284a04f9", size = 249349, upload-time = "2025-12-08T13:14:04.015Z" },
-    { url = "https://files.pythonhosted.org/packages/86/0d/7f6c42b8d59f4c7e43ea3059f573c0dcfed98ba46eb43c68c69e52ae095c/coverage-7.13.0-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:4b5de7d4583e60d5fd246dd57fcd3a8aa23c6e118a8c72b38adf666ba8e7e927", size = 251011, upload-time = "2025-12-08T13:14:05.505Z" },
-    { url = "https://files.pythonhosted.org/packages/d7/f1/4bb2dff379721bb0b5c649d5c5eaf438462cad824acf32eb1b7ca0c7078e/coverage-7.13.0-cp314-cp314-win32.whl", hash = "sha256:a6c6e16b663be828a8f0b6c5027d36471d4a9f90d28444aa4ced4d48d7d6ae8f", size = 221091, upload-time = "2025-12-08T13:14:07.127Z" },
-    { url = "https://files.pythonhosted.org/packages/ba/44/c239da52f373ce379c194b0ee3bcc121020e397242b85f99e0afc8615066/coverage-7.13.0-cp314-cp314-win_amd64.whl", hash = "sha256:0900872f2fdb3ee5646b557918d02279dc3af3dfb39029ac4e945458b13f73bc", size = 221904, upload-time = "2025-12-08T13:14:08.542Z" },
-    { url = "https://files.pythonhosted.org/packages/89/1f/b9f04016d2a29c2e4a0307baefefad1a4ec5724946a2b3e482690486cade/coverage-7.13.0-cp314-cp314-win_arm64.whl", hash = "sha256:3a10260e6a152e5f03f26db4a407c4c62d3830b9af9b7c0450b183615f05d43b", size = 220480, upload-time = "2025-12-08T13:14:10.958Z" },
-    { url = "https://files.pythonhosted.org/packages/16/d4/364a1439766c8e8647860584171c36010ca3226e6e45b1753b1b249c5161/coverage-7.13.0-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:9097818b6cc1cfb5f174e3263eba4a62a17683bcfe5c4b5d07f4c97fa51fbf28", size = 219074, upload-time = "2025-12-08T13:14:13.345Z" },
-    { url = "https://files.pythonhosted.org/packages/ce/f4/71ba8be63351e099911051b2089662c03d5671437a0ec2171823c8e03bec/coverage-7.13.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:0018f73dfb4301a89292c73be6ba5f58722ff79f51593352759c1790ded1cabe", size = 219342, upload-time = "2025-12-08T13:14:15.02Z" },
-    { url = "https://files.pythonhosted.org/packages/5e/25/127d8ed03d7711a387d96f132589057213e3aef7475afdaa303412463f22/coverage-7.13.0-cp314-cp314t-manylinux1_i686.manylinux_2_28_i686.manylinux_2_5_i686.whl", hash = "sha256:166ad2a22ee770f5656e1257703139d3533b4a0b6909af67c6b4a3adc1c98657", size = 260713, upload-time = "2025-12-08T13:14:16.907Z" },
-    { url = "https://files.pythonhosted.org/packages/fd/db/559fbb6def07d25b2243663b46ba9eb5a3c6586c0c6f4e62980a68f0ee1c/coverage-7.13.0-cp314-cp314t-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:f6aaef16d65d1787280943f1c8718dc32e9cf141014e4634d64446702d26e0ff", size = 262825, upload-time = "2025-12-08T13:14:18.68Z" },
-    { url = "https://files.pythonhosted.org/packages/37/99/6ee5bf7eff884766edb43bd8736b5e1c5144d0fe47498c3779326fe75a35/coverage-7.13.0-cp314-cp314t-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e999e2dcc094002d6e2c7bbc1fb85b58ba4f465a760a8014d97619330cdbbbf3", size = 265233, upload-time = "2025-12-08T13:14:20.55Z" },
-    { url = "https://files.pythonhosted.org/packages/d8/90/92f18fe0356ea69e1f98f688ed80cec39f44e9f09a1f26a1bbf017cc67f2/coverage-7.13.0-cp314-cp314t-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:00c3d22cf6fb1cf3bf662aaaa4e563be8243a5ed2630339069799835a9cc7f9b", size = 259779, upload-time = "2025-12-08T13:14:22.367Z" },
-    { url = "https://files.pythonhosted.org/packages/90/5d/b312a8b45b37a42ea7d27d7d3ff98ade3a6c892dd48d1d503e773503373f/coverage-7.13.0-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:22ccfe8d9bb0d6134892cbe1262493a8c70d736b9df930f3f3afae0fe3ac924d", size = 262700, upload-time = "2025-12-08T13:14:24.309Z" },
-    { url = "https://files.pythonhosted.org/packages/63/f8/b1d0de5c39351eb71c366f872376d09386640840a2e09b0d03973d791e20/coverage-7.13.0-cp314-cp314t-musllinux_1_2_i686.whl", hash = "sha256:9372dff5ea15930fea0445eaf37bbbafbc771a49e70c0aeed8b4e2c2614cc00e", size = 260302, upload-time = "2025-12-08T13:14:26.068Z" },
-    { url = "https://files.pythonhosted.org/packages/aa/7c/d42f4435bc40c55558b3109a39e2d456cddcec37434f62a1f1230991667a/coverage-7.13.0-cp314-cp314t-musllinux_1_2_riscv64.whl", hash = "sha256:69ac2c492918c2461bc6ace42d0479638e60719f2a4ef3f0815fa2df88e9f940", size = 259136, upload-time = "2025-12-08T13:14:27.604Z" },
-    { url = "https://files.pythonhosted.org/packages/b8/d3/23413241dc04d47cfe19b9a65b32a2edd67ecd0b817400c2843ebc58c847/coverage-7.13.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:739c6c051a7540608d097b8e13c76cfa85263ced467168dc6b477bae3df7d0e2", size = 261467, upload-time = "2025-12-08T13:14:29.09Z" },
-    { url = "https://files.pythonhosted.org/packages/13/e6/6e063174500eee216b96272c0d1847bf215926786f85c2bd024cf4d02d2f/coverage-7.13.0-cp314-cp314t-win32.whl", hash = "sha256:fe81055d8c6c9de76d60c94ddea73c290b416e061d40d542b24a5871bad498b7", size = 221875, upload-time = "2025-12-08T13:14:31.106Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/46/f4fb293e4cbe3620e3ac2a3e8fd566ed33affb5861a9b20e3dd6c1896cbc/coverage-7.13.0-cp314-cp314t-win_amd64.whl", hash = "sha256:445badb539005283825959ac9fa4a28f712c214b65af3a2c464f1adc90f5fcbc", size = 222982, upload-time = "2025-12-08T13:14:33.1Z" },
-    { url = "https://files.pythonhosted.org/packages/68/62/5b3b9018215ed9733fbd1ae3b2ed75c5de62c3b55377a52cae732e1b7805/coverage-7.13.0-cp314-cp314t-win_arm64.whl", hash = "sha256:de7f6748b890708578fc4b7bb967d810aeb6fcc9bff4bb77dbca77dab2f9df6a", size = 221016, upload-time = "2025-12-08T13:14:34.601Z" },
-    { url = "https://files.pythonhosted.org/packages/8d/4c/1968f32fb9a2604645827e11ff84a31e59d532e01995f904723b4f5328b3/coverage-7.13.0-py3-none-any.whl", hash = "sha256:850d2998f380b1e266459ca5b47bc9e7daf9af1d070f66317972f382d46f1904", size = 210068, upload-time = "2025-12-08T13:14:36.236Z" },
-]
-
-[[package]]
 name = "cssselect2"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -461,19 +3351,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-debug-toolbar"
-version = "6.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "sqlparse" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/50/acae2dd379164f6f4c6b6b36fd48a4d21b02095a03f4df7c30a8d1f1a62c/django_debug_toolbar-6.1.0.tar.gz", hash = "sha256:e962ec350c9be8bdba918138e975a9cdb193f60ec396af2bb71b769e8e165519", size = 309141, upload-time = "2025-10-30T19:50:39.458Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6d/72/685c978af45ad08257e2c69687a873eda6b6531c79b6e6091794c41c5ff6/django_debug_toolbar-6.1.0-py3-none-any.whl", hash = "sha256:e214dea4494087e7cebdcea84223819c5eb97f9de3110a3665ad673f0ba98413", size = 269069, upload-time = "2025-10-30T19:50:37.71Z" },
-]
-
-[[package]]
 name = "django-environ"
 version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -492,20 +3369,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/95/5376fe618646fde6899b3cdc85fd959716bb67542e273a76a80d9f326f27/djangorestframework-3.16.1.tar.gz", hash = "sha256:166809528b1aced0a17dc66c24492af18049f2c9420dbd0be29422029cfc3ff7", size = 1089735, upload-time = "2025-08-06T17:50:53.251Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/ce/bf8b9d3f415be4ac5588545b5fcdbbb841977db1c1d923f7568eeabe1689/djangorestframework-3.16.1-py3-none-any.whl", hash = "sha256:33a59f47fb9c85ede792cbf88bde71893bcda0667bc573f784649521f1102cec", size = 1080442, upload-time = "2025-08-06T17:50:50.667Z" },
-]
-
-[[package]]
-name = "djangorestframework-simplejwt"
-version = "5.5.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-    { name = "pyjwt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/27/2874a325c11112066139769f7794afae238a07ce6adf96259f08fd37a9d7/djangorestframework_simplejwt-5.5.1.tar.gz", hash = "sha256:e72c5572f51d7803021288e2057afcbd03f17fe11d484096f40a460abc76e87f", size = 101265, upload-time = "2025-07-21T16:52:25.026Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/94/fdfb7b2f0b16cd3ed4d4171c55c1c07a2d1e3b106c5978c8ad0c15b4a48b/djangorestframework_simplejwt-5.5.1-py3-none-any.whl", hash = "sha256:2c30f3707053d384e9f315d11c2daccfcb548d4faa453111ca19a542b732e469", size = 107674, upload-time = "2025-07-21T16:52:07.493Z" },
 ]
 
 [[package]]
@@ -956,15 +3819,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyjwt"
-version = "2.10.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e7/46/bd74733ff231675599650d3e47f361794b22ef3e3770998dda30d3b63726/pyjwt-2.10.1.tar.gz", hash = "sha256:3cc5772eb20009233caf06e9d8a0577824723b44e6648ee0a2aedb6cf9381953", size = 87785, upload-time = "2024-11-28T03:43:29.933Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/61/ad/689f02752eeec26aed679477e80e632ef1b682313be70793d798c1d5fc8f/PyJWT-2.10.1-py3-none-any.whl", hash = "sha256:dcdd193e30abefd5debf142f9adfcdd2b58004e644f25406ffaebd50bd98dacb", size = 22997, upload-time = "2024-11-28T03:43:27.893Z" },
-]
-
-[[package]]
 name = "pyphen"
 version = "0.17.2"
 source = { registry = "https://pypi.org/simple" }
@@ -987,20 +3841,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
-]
-
-[[package]]
-name = "pytest-cov"
-version = "7.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "coverage" },
-    { name = "pluggy" },
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/f7/c933acc76f5208b3b00089573cf6a2bc26dc80a8aece8f52bb7d6b1855ca/pytest_cov-7.0.0.tar.gz", hash = "sha256:33c97eda2e049a0c5298e91f519302a1334c26ac65c1a483d6206fd458361af1", size = 54328, upload-time = "2025-09-09T10:57:02.113Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ee/49/1377b49de7d0c1ce41292161ea0f721913fa8722c19fb9c1e3aa0367eecb/pytest_cov-7.0.0-py3-none-any.whl", hash = "sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861", size = 22424, upload-time = "2025-09-09T10:57:00.695Z" },
 ]
 
 [[package]]
@@ -1249,17 +4089,12 @@ dependencies = [
     { name = "django" },
     { name = "django-allauth" },
     { name = "django-cors-headers" },
-    { name = "django-debug-toolbar" },
     { name = "django-environ" },
     { name = "djangorestframework" },
-    { name = "djangorestframework-simplejwt" },
     { name = "drf-spectacular" },
-    { name = "factory-boy" },
     { name = "gunicorn" },
     { name = "pillow" },
     { name = "psycopg2-binary" },
-    { name = "pytest" },
-    { name = "pytest-django" },
     { name = "python-jose" },
     { name = "redis" },
     { name = "sentry-sdk" },
@@ -1274,7 +4109,6 @@ dev = [
     { name = "flake8" },
     { name = "isort" },
     { name = "pytest" },
-    { name = "pytest-cov" },
     { name = "pytest-django" },
 ]
 
@@ -1285,22 +4119,16 @@ requires-dist = [
     { name = "django", specifier = ">=6.0" },
     { name = "django-allauth", specifier = ">=65.13.1" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
-    { name = "django-debug-toolbar", specifier = ">=4.5.0" },
     { name = "django-environ", specifier = ">=0.12.0" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
-    { name = "djangorestframework-simplejwt", specifier = ">=5.4.0" },
     { name = "drf-spectacular", specifier = ">=0.27.1" },
-    { name = "factory-boy", specifier = ">=3.3.3" },
     { name = "factory-boy", marker = "extra == 'dev'", specifier = ">=3.3.3" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "gunicorn", specifier = ">=21.2.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
-    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.2.0" },
-    { name = "pytest-django", specifier = ">=4.11.1" },
     { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.11.1" },
     { name = "python-jose", specifier = ">=3.5.0" },
     { name = "redis", specifier = ">=6.4.0" },
@@ -1473,3 +4301,1782 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/95/db/4f2eebf73c0e2df293a366a1d176cd315a74ce0b00f83826a7ba9ddd1ab3/zopfli-0.4.0-cp310-abi3-win32.whl", hash = "sha256:03181d48e719fcb6cf8340189c61e8f9883d8bbbdf76bf5212a74457f7d083c1", size = 83655, upload-time = "2025-11-07T17:00:51.797Z" },
     { url = "https://files.pythonhosted.org/packages/24/f6/bd80c5278b1185dc41155c77bc61bfe1d817254a7f2115f66aa69a270b89/zopfli-0.4.0-cp310-abi3-win_amd64.whl", hash = "sha256:f94e4dd7d76b4fe9f5d9229372be20d7f786164eea5152d1af1c34298c3d5975", size = 100824, upload-time = "2025-11-07T17:00:52.658Z" },
 ]
+
+```
+
+# backend/core/__init__.py
+```py
+"""
+Core module for Singapore SMB E-commerce Platform.
+
+This module provides shared infrastructure components used across all apps.
+"""
+
+```
+
+# backend/core/exceptions.py
+```py
+"""
+Custom exceptions for Singapore SMB E-commerce Platform.
+
+These exceptions provide structured error handling with:
+- Consistent error codes for API responses
+- Clear error messages for debugging
+- Proper HTTP status codes
+"""
+from rest_framework.exceptions import APIException
+from rest_framework.views import exception_handler
+from rest_framework.response import Response
+
+
+# =============================================================================
+# BASE EXCEPTIONS
+# =============================================================================
+
+class BusinessLogicError(APIException):
+    """
+    Base exception for business logic errors.
+    
+    Use this as the parent class for domain-specific exceptions.
+    Returns HTTP 400 by default.
+    """
+    status_code = 400
+    default_code = 'business_error'
+    default_detail = 'A business logic error occurred.'
+
+
+class ValidationError(BusinessLogicError):
+    """
+    Raised when business rule validation fails.
+    
+    Examples:
+        - Invalid GST code
+        - Order amount below minimum
+        - Invalid date range
+    """
+    default_code = 'validation_error'
+    default_detail = 'Validation failed.'
+
+
+# =============================================================================
+# COMMERCE EXCEPTIONS
+# =============================================================================
+
+class InsufficientStockError(BusinessLogicError):
+    """
+    Raised when inventory is insufficient for an operation.
+    
+    Attributes:
+        product_id: ID of the product with insufficient stock
+        requested: Quantity requested
+        available: Quantity available
+    """
+    default_code = 'insufficient_stock'
+    default_detail = 'Insufficient stock available.'
+    
+    def __init__(self, product_id=None, requested=None, available=None, detail=None):
+        if detail is None and product_id:
+            detail = f'Insufficient stock for product {product_id}. Requested: {requested}, Available: {available}'
+        super().__init__(detail=detail)
+        self.product_id = product_id
+        self.requested = requested
+        self.available = available
+
+
+class OrderStateError(BusinessLogicError):
+    """
+    Raised when an order state transition is invalid.
+    
+    Example: Trying to ship an already cancelled order.
+    """
+    default_code = 'invalid_order_state'
+    default_detail = 'Invalid order state transition.'
+
+
+# =============================================================================
+# PAYMENT EXCEPTIONS
+# =============================================================================
+
+class PaymentError(BusinessLogicError):
+    """
+    Base exception for payment processing errors.
+    
+    Returns HTTP 402 Payment Required.
+    """
+    status_code = 402
+    default_code = 'payment_error'
+    default_detail = 'Payment processing failed.'
+
+
+class PaymentDeclinedError(PaymentError):
+    """Raised when a payment is declined by the gateway."""
+    default_code = 'payment_declined'
+    default_detail = 'Your payment was declined. Please try a different payment method.'
+
+
+class PaymentGatewayError(PaymentError):
+    """Raised when the payment gateway is unavailable."""
+    status_code = 503
+    default_code = 'gateway_unavailable'
+    default_detail = 'Payment service is temporarily unavailable.'
+
+
+# =============================================================================
+# AUTHENTICATION EXCEPTIONS
+# =============================================================================
+
+class AuthenticationError(BusinessLogicError):
+    """Base exception for authentication errors."""
+    status_code = 401
+    default_code = 'authentication_error'
+    default_detail = 'Authentication failed.'
+
+
+class AccountLockedError(AuthenticationError):
+    """Raised when a user account is locked due to failed attempts."""
+    default_code = 'account_locked'
+    default_detail = 'Account is locked due to too many failed login attempts.'
+
+
+class MFARequiredError(AuthenticationError):
+    """Raised when MFA verification is required."""
+    default_code = 'mfa_required'
+    default_detail = 'Multi-factor authentication is required.'
+
+
+# =============================================================================
+# AUTHORIZATION EXCEPTIONS
+# =============================================================================
+
+class PermissionDeniedError(BusinessLogicError):
+    """Raised when user lacks required permissions."""
+    status_code = 403
+    default_code = 'permission_denied'
+    default_detail = 'You do not have permission to perform this action.'
+
+
+class TenantAccessError(PermissionDeniedError):
+    """Raised when user tries to access another company's data."""
+    default_code = 'tenant_access_denied'
+    default_detail = 'Access to this resource is not permitted.'
+
+
+# =============================================================================
+# INTEGRATION EXCEPTIONS
+# =============================================================================
+
+class IntegrationError(BusinessLogicError):
+    """Base exception for third-party integration errors."""
+    status_code = 502
+    default_code = 'integration_error'
+    default_detail = 'An error occurred with an external service.'
+
+
+class LogisticsError(IntegrationError):
+    """Raised when logistics provider API fails."""
+    default_code = 'logistics_error'
+    default_detail = 'Shipping service error.'
+
+
+class GSTError(BusinessLogicError):
+    """Raised for GST calculation or validation errors."""
+    default_code = 'gst_error'
+    default_detail = 'GST processing error.'
+
+
+# =============================================================================
+# CUSTOM EXCEPTION HANDLER
+# =============================================================================
+
+def custom_exception_handler(exc, context):
+    """
+    Custom exception handler for DRF that provides consistent error responses.
+    
+    Response format:
+    {
+        "status": "error",
+        "error": {
+            "code": "error_code",
+            "message": "Human-readable message",
+            "details": [...] (optional)
+        }
+    }
+    """
+    response = exception_handler(exc, context)
+    
+    if response is not None:
+        # Build custom error response
+        error_data = {
+            'status': 'error',
+            'error': {
+                'code': getattr(exc, 'default_code', 'error'),
+                'message': str(exc.detail) if hasattr(exc, 'detail') else str(exc),
+            }
+        }
+        
+        # Add details if available (e.g., validation errors)
+        if hasattr(exc, 'detail') and isinstance(exc.detail, dict):
+            error_data['error']['details'] = exc.detail
+        
+        response.data = error_data
+    
+    return response
+
+```
+
+# backend/core/middleware.py
+```py
+"""
+Custom middleware for Singapore SMB E-commerce Platform.
+
+Provides:
+- TenantMiddleware: Multi-tenant context management
+- AuditMiddleware: Track current user for audit fields
+- SecurityHeadersMiddleware: Add security headers to responses
+"""
+import threading
+from django.utils.deprecation import MiddlewareMixin
+from django.http import JsonResponse
+
+
+# Thread-local storage for request context
+_thread_locals = threading.local()
+
+
+def get_current_user():
+    """Get the current user from thread-local storage."""
+    return getattr(_thread_locals, 'user', None)
+
+
+def get_current_company():
+    """Get the current company from thread-local storage."""
+    return getattr(_thread_locals, 'company', None)
+
+
+def get_current_request():
+    """Get the current request from thread-local storage."""
+    return getattr(_thread_locals, 'request', None)
+
+
+class TenantMiddleware(MiddlewareMixin):
+    """
+    Middleware that sets the current company context for multi-tenant isolation.
+    
+    Extracts company from:
+    1. JWT token claims
+    2. User's associated company
+    3. X-Company-ID header (for internal services)
+    
+    Sets company in thread-local storage for use in queries.
+    """
+    
+    def process_request(self, request):
+        """Extract and set company context."""
+        company = None
+        
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            # Get company from authenticated user
+            company = getattr(request.user, 'company', None)
+        
+        # Allow header override for internal services
+        company_header = request.headers.get('X-Company-ID')
+        if company_header and hasattr(request, 'user'):
+            if request.user.is_superuser:
+                from apps.accounts.models import Company
+                try:
+                    company = Company.objects.get(id=company_header)
+                except Company.DoesNotExist:
+                    pass
+        
+        # Store in thread-local
+        _thread_locals.company = company
+        request.company = company
+    
+    def process_response(self, request, response):
+        """Clean up thread-local storage."""
+        if hasattr(_thread_locals, 'company'):
+            del _thread_locals.company
+        return response
+
+
+class AuditMiddleware(MiddlewareMixin):
+    """
+    Middleware that stores current user and request for audit logging.
+    
+    Makes the current user available to models for automatic
+    population of created_by/updated_by fields.
+    """
+    
+    def process_request(self, request):
+        """Store user and request in thread-local storage."""
+        _thread_locals.request = request
+        _thread_locals.user = getattr(request, 'user', None)
+    
+    def process_response(self, request, response):
+        """Clean up thread-local storage."""
+        if hasattr(_thread_locals, 'user'):
+            del _thread_locals.user
+        if hasattr(_thread_locals, 'request'):
+            del _thread_locals.request
+        return response
+
+
+class SecurityHeadersMiddleware(MiddlewareMixin):
+    """
+    Middleware that adds security headers to all responses.
+    
+    Headers added:
+    - X-Content-Type-Options: nosniff
+    - X-Frame-Options: DENY
+    - X-XSS-Protection: 1; mode=block
+    - Referrer-Policy: strict-origin-when-cross-origin
+    - Permissions-Policy: Restrict browser features
+    """
+    
+    def process_response(self, request, response):
+        """Add security headers to response."""
+        # Prevent MIME type sniffing
+        response['X-Content-Type-Options'] = 'nosniff'
+        
+        # Prevent clickjacking
+        response['X-Frame-Options'] = 'DENY'
+        
+        # XSS protection (legacy, but still useful)
+        response['X-XSS-Protection'] = '1; mode=block'
+        
+        # Referrer policy
+        response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
+        # Permissions policy (restrict browser features)
+        response['Permissions-Policy'] = (
+            'accelerometer=(), camera=(), geolocation=(), gyroscope=(), '
+            'magnetometer=(), microphone=(), payment=(), usb=()'
+        )
+        
+        return response
+
+
+class RequestLoggingMiddleware(MiddlewareMixin):
+    """
+    Middleware that logs API requests for debugging and monitoring.
+    
+    Logs:
+    - Request method and path
+    - User ID (if authenticated)
+    - Response status code
+    - Request duration
+    """
+    
+    def process_request(self, request):
+        """Record request start time."""
+        import time
+        request._start_time = time.time()
+    
+    def process_response(self, request, response):
+        """Log request details."""
+        import logging
+        import time
+        
+        logger = logging.getLogger('apps')
+        
+        # Calculate duration
+        duration = None
+        if hasattr(request, '_start_time'):
+            duration = time.time() - request._start_time
+        
+        # Build log message
+        user_id = None
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            user_id = str(request.user.id)
+        
+        # Only log API requests
+        if request.path.startswith('/api/'):
+            logger.info(
+                f"{request.method} {request.path} "
+                f"[{response.status_code}] "
+                f"user={user_id} "
+                f"duration={duration:.3f}s" if duration else ""
+            )
+        
+        return response
+
+
+class APIVersionMiddleware(MiddlewareMixin):
+    """
+    Middleware that adds API version info to responses.
+    
+    Adds X-API-Version header to all API responses.
+    """
+    
+    def process_response(self, request, response):
+        """Add API version header."""
+        if request.path.startswith('/api/'):
+            response['X-API-Version'] = '1.0'
+        return response
+
+
+class MaintenanceModeMiddleware(MiddlewareMixin):
+    """
+    Middleware that enables maintenance mode.
+    
+    When MAINTENANCE_MODE setting is True, returns 503 for all
+    non-admin requests.
+    """
+    
+    def process_request(self, request):
+        """Check maintenance mode."""
+        from django.conf import settings
+        
+        if getattr(settings, 'MAINTENANCE_MODE', False):
+            # Allow admin access
+            if request.path.startswith('/admin/'):
+                return None
+            
+            # Allow health check
+            if request.path == '/health/':
+                return None
+            
+            return JsonResponse(
+                {
+                    'status': 'error',
+                    'error': {
+                        'code': 'maintenance',
+                        'message': 'System is under maintenance. Please try again later.',
+                    }
+                },
+                status=503
+            )
+        
+        return None
+
+```
+
+# backend/core/models.py
+```py
+"""
+Core abstract models for Singapore SMB E-commerce Platform.
+
+These base models provide common fields and functionality for all models:
+- UUID primary keys for distributed-friendly IDs
+- Automatic timestamp tracking
+- Audit fields for user tracking
+- Soft delete support
+"""
+import uuid
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
+
+class BaseModel(models.Model):
+    """
+    Abstract base model with UUID primary key and timestamps.
+    
+    All models should inherit from this to ensure consistent:
+    - UUID-based primary keys (distributed-friendly)
+    - Creation and modification timestamps
+    """
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        help_text="Unique identifier (UUID4)"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="When this record was created"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        help_text="When this record was last updated"
+    )
+    
+    class Meta:
+        abstract = True
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return str(self.id)
+
+
+class AuditableModel(BaseModel):
+    """
+    Abstract model that tracks which user created/modified records.
+    
+    Use for models where accountability and audit trails are important.
+    Automatically populated via middleware or manual assignment.
+    """
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='%(class)s_created',
+        help_text="User who created this record"
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='%(class)s_updated',
+        help_text="User who last modified this record"
+    )
+    
+    class Meta:
+        abstract = True
+
+
+class SoftDeleteManager(models.Manager):
+    """
+    Manager that excludes soft-deleted records by default.
+    
+    Use `.all_with_deleted()` to include deleted records.
+    """
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+    
+    def all_with_deleted(self):
+        """Return all records including soft-deleted ones."""
+        return super().get_queryset()
+    
+    def deleted_only(self):
+        """Return only soft-deleted records."""
+        return super().get_queryset().filter(deleted_at__isnull=False)
+
+
+class SoftDeleteModel(BaseModel):
+    """
+    Abstract model with soft delete functionality.
+    
+    Instead of permanently deleting records, sets `deleted_at` timestamp.
+    PDPA compliance: Allows data retention while marking as "deleted".
+    
+    Methods:
+        delete(): Soft-delete the record
+        hard_delete(): Permanently delete the record
+        restore(): Restore a soft-deleted record
+    """
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="When this record was soft-deleted"
+    )
+    
+    objects = SoftDeleteManager()
+    all_objects = models.Manager()  # Access all records including deleted
+    
+    class Meta:
+        abstract = True
+    
+    @property
+    def is_deleted(self) -> bool:
+        """Check if record is soft-deleted."""
+        return self.deleted_at is not None
+    
+    def delete(self, using=None, keep_parents=False):
+        """
+        Soft-delete the record by setting deleted_at timestamp.
+        
+        For permanent deletion, use hard_delete().
+        """
+        self.deleted_at = timezone.now()
+        self.save(update_fields=['deleted_at', 'updated_at'])
+    
+    def hard_delete(self, using=None, keep_parents=False):
+        """
+        Permanently delete the record from the database.
+        
+        WARNING: This cannot be undone!
+        """
+        super().delete(using=using, keep_parents=keep_parents)
+    
+    def restore(self):
+        """Restore a soft-deleted record."""
+        if self.deleted_at is not None:
+            self.deleted_at = None
+            self.save(update_fields=['deleted_at', 'updated_at'])
+
+
+class CompanyOwnedModel(SoftDeleteModel):
+    """
+    Abstract model for records that belong to a specific company.
+    
+    Provides multi-tenant data isolation when combined with
+    TenantMiddleware and appropriate permissions.
+    """
+    company = models.ForeignKey(
+        'accounts.Company',
+        on_delete=models.CASCADE,
+        related_name='%(class)s_set',
+        help_text="Company that owns this record"
+    )
+    
+    class Meta:
+        abstract = True
+
+```
+
+# backend/core/permissions.py
+```py
+"""
+Custom DRF permissions for Singapore SMB E-commerce Platform.
+
+Provides:
+- Tenant isolation (IsCompanyMember)
+- Role-based access control (HasRole, HasAnyRole)
+- Object-level permissions (IsOwnerOrAdmin)
+"""
+from rest_framework.permissions import BasePermission
+
+
+class IsCompanyMember(BasePermission):
+    """
+    Permission that ensures user belongs to the company in the request.
+    
+    Used for multi-tenant data isolation. Checks that the authenticated
+    user's company matches the company_id in the URL or request data.
+    """
+    message = "You do not have access to this company's resources."
+    
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        
+        # Superusers bypass company check
+        if request.user.is_superuser:
+            return True
+        
+        # Get company_id from URL kwargs or request data
+        company_id = (
+            view.kwargs.get('company_id') or
+            request.data.get('company_id') or
+            request.query_params.get('company_id')
+        )
+        
+        if company_id is None:
+            # If no company_id specified, use user's company
+            return True
+        
+        return str(request.user.company_id) == str(company_id)
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Check if object has company attribute
+        if hasattr(obj, 'company_id'):
+            return obj.company_id == request.user.company_id
+        
+        return True
+
+
+class HasRole(BasePermission):
+    """
+    Permission that checks if user has a specific role.
+    
+    Usage in ViewSet:
+        permission_classes = [HasRole]
+        required_roles = ['admin', 'finance']
+    
+    Or use HasAnyRole for inline usage.
+    """
+    message = "You do not have the required role to perform this action."
+    
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Get required roles from view
+        required_roles = getattr(view, 'required_roles', [])
+        
+        if not required_roles:
+            return True
+        
+        # Check if user has any of the required roles
+        user_roles = set(request.user.roles.values_list('name', flat=True))
+        return bool(user_roles.intersection(set(required_roles)))
+
+
+def HasAnyRole(*roles):
+    """
+    Factory function to create a permission class requiring any of the given roles.
+    
+    Usage:
+        permission_classes = [HasAnyRole('admin', 'owner')]
+    """
+    class HasAnyRolePermission(BasePermission):
+        message = f"Required role: one of {roles}"
+        
+        def has_permission(self, request, view):
+            if not request.user.is_authenticated:
+                return False
+            
+            if request.user.is_superuser:
+                return True
+            
+            user_roles = set(request.user.roles.values_list('name', flat=True))
+            return bool(user_roles.intersection(set(roles)))
+    
+    return HasAnyRolePermission
+
+
+class IsOwnerOrAdmin(BasePermission):
+    """
+    Object-level permission that allows access only to:
+    - Object owner (via user field)
+    - Admins
+    - Superusers
+    
+    Configure the owner field via view attribute:
+        owner_field = 'created_by'  # Default: 'user'
+    """
+    message = "You do not have permission to access this object."
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        # Check if user is admin
+        if hasattr(request.user, 'roles'):
+            if request.user.roles.filter(name='admin').exists():
+                return True
+        
+        # Check ownership
+        owner_field = getattr(view, 'owner_field', 'user')
+        
+        if hasattr(obj, owner_field):
+            owner = getattr(obj, owner_field)
+            if owner is not None:
+                owner_id = owner.id if hasattr(owner, 'id') else owner
+                return owner_id == request.user.id
+        
+        return False
+
+
+class IsAdminUser(BasePermission):
+    """
+    Permission that allows access only to admin users.
+    
+    Checks:
+    - is_superuser flag
+    - 'admin' role assignment
+    """
+    message = "Admin access required."
+    
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        if hasattr(request.user, 'roles'):
+            return request.user.roles.filter(name='admin').exists()
+        
+        return False
+
+
+class IsFinanceUser(BasePermission):
+    """
+    Permission for finance-sensitive operations like GST filing.
+    
+    Allows:
+    - Superusers
+    - Users with 'finance' or 'admin' role
+    """
+    message = "Finance role required for this operation."
+    
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        
+        if request.user.is_superuser:
+            return True
+        
+        if hasattr(request.user, 'roles'):
+            return request.user.roles.filter(
+                name__in=['finance', 'admin', 'owner']
+            ).exists()
+        
+        return False
+
+
+class ReadOnly(BasePermission):
+    """
+    Permission that allows read-only access (GET, HEAD, OPTIONS).
+    
+    Useful for public endpoints or combining with other permissions.
+    """
+    def has_permission(self, request, view):
+        return request.method in ('GET', 'HEAD', 'OPTIONS')
+
+```
+
+# backend/manage.py
+```py
+#!/usr/bin/env python
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+
+def main():
+    """Run administrative tasks."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+```
+
+# backend/README.md
+```md
+# Singapore SMB E-commerce Platform (Hybrid Architecture)
+
+## Overview
+A comprehensive e-commerce and inventory management system designed for Singapore SMBs, featuring:
+- **Backend**: Django 5.2+ (Python) for financial precision, GST compliance, and admin operations.
+- **Frontend**: Next.js 16+ (React) for a high-performance, mobile-first PWA storefront.
+- **Compliance**: Built-in support for Singapore GST (F5), InvoiceNow (PEPPOL), and PDPA.
+
+## Project Structure
+- `backend/`: Django API, Celery workers, and Business Logic.
+- `frontend/`: Next.js PWA, Customer Storefront.
+
+## Getting Started
+
+### Prerequisites
+- Python 3.12+
+- Node.js 20+
+- PostgreSQL 16+
+- Redis 7+
+
+### Backend Setup
+```bash
+cd backend
+pip install -e .
+python manage.py migrate
+python manage.py runserver
+```
+
+### Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+```
+
+# backend/conftest.py
+```py
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "--strict-markers --tb=short -v"
+testpaths = ["apps"]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests"
+]
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+]
+
+```
+
+# backend/pyproject.toml
+```toml
+[project]
+name = "singapore-smb-backend"
+version = "0.1.0"
+description = "Django backend for Singapore SMB E-commerce Platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=6.0",
+    "djangorestframework>=3.16.1",
+    "djangorestframework-simplejwt>=5.4.0",  # JWT Authentication
+    "django-cors-headers>=4.9.0",
+    "django-environ>=0.12.0",
+    "django-allauth>=65.13.1",
+    "django-debug-toolbar>=4.5.0",  # Development debugging
+    "celery>=5.5.3",
+    "redis>=6.4.0",
+    "psycopg2-binary>=2.9.10",
+    "gunicorn>=21.2.0",
+    "pillow>=11.3.0",
+    "drf-spectacular>=0.27.1",  # For API Documentation
+    "stripe>=8.4.0",            # Payment Processing
+    "weasyprint>=67.0",         # Invoice PDF Generation
+    "python-jose>=3.5.0", # JWT Handling
+    "sentry-sdk>=2.37.0"        # Error Monitoring
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-django>=4.11.1",
+    "pytest-cov>=6.2.0",
+    "black>=25.9.0",
+    "isort>=7.0.0",
+    "flake8>=7.3.0",
+    "factory-boy>=3.3.3"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["config", "apps"]
+
+```
+
+# backend/pytest.ini
+```ini
+[pytest]
+DJANGO_SETTINGS_MODULE = config.settings.development
+python_files = tests.py test_*.py *_tests.py
+addopts = 
+    --strict-markers
+    --tb=short
+    -v
+testpaths = apps
+filterwarnings =
+    ignore::DeprecationWarning
+markers =
+    slow: marks tests as slow (deselect with '-m "not slow"')
+    integration: marks tests as integration tests
+
+```
+
+# backend/config/__init__.py
+```py
+"""
+Django project configuration package.
+
+This module initializes the Celery application for the project.
+"""
+from .celery import app as celery_app
+
+__all__ = ('celery_app',)
+
+```
+
+# backend/config/settings/__init__.py
+```py
+"""Settings package for different environments."""
+
+```
+
+# backend/config/settings/development.py
+```py
+"""
+Django development settings.
+
+These settings extend base.py for local development.
+"""
+from .base import *  # noqa: F401, F403
+
+# =============================================================================
+# DEBUG
+# =============================================================================
+
+DEBUG = True
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': env('DB_NAME', default='singapore_smb'),
+        'USER': env('DB_USER', default='postgres'),
+        'PASSWORD': env('DB_PASSWORD', default='postgres'),
+        'HOST': env('DB_HOST', default='localhost'),
+        'PORT': env('DB_PORT', default='5432'),
+    }
+}
+
+# =============================================================================
+# DEBUG TOOLBAR
+# =============================================================================
+
+INSTALLED_APPS += ['debug_toolbar']  # noqa: F405
+MIDDLEWARE.insert(0, 'debug_toolbar.middleware.DebugToolbarMiddleware')  # noqa: F405
+INTERNAL_IPS = ['127.0.0.1']
+
+# =============================================================================
+# CORS
+# =============================================================================
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+# =============================================================================
+# EMAIL (Console backend for development)
+# =============================================================================
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOGGING['handlers']['console']['level'] = 'DEBUG'  # noqa: F405
+LOGGING['loggers']['apps']['level'] = 'DEBUG'  # noqa: F405
+
+# =============================================================================
+# DJANGO REST FRAMEWORK
+# =============================================================================
+
+# Add browsable API for development
+REST_FRAMEWORK['DEFAULT_RENDERER_CLASSES'] = [  # noqa: F405
+    'rest_framework.renderers.JSONRenderer',
+    'rest_framework.renderers.BrowsableAPIRenderer',
+]
+
+# =============================================================================
+# JWT (Longer-lived tokens for development)
+# =============================================================================
+
+from datetime import timedelta
+SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'] = timedelta(hours=1)  # noqa: F405
+SIMPLE_JWT['REFRESH_TOKEN_LIFETIME'] = timedelta(days=30)  # noqa: F405
+
+```
+
+# backend/config/settings/base.py
+```py
+"""
+Django base settings for Singapore SMB E-commerce Platform.
+
+These settings are shared across all environments.
+For production deployment, use production.py which extends these settings.
+"""
+import os
+from decimal import Decimal
+from pathlib import Path
+
+import environ
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Initialize environment variables
+env = environ.Env(
+    DEBUG=(bool, False),
+    ALLOWED_HOSTS=(list, ['localhost', '127.0.0.1']),
+)
+
+# Read .env file if it exists
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+
+# =============================================================================
+# SECURITY SETTINGS
+# =============================================================================
+
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-dev-key-change-in-production')
+DEBUG = env('DEBUG')
+ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+
+# =============================================================================
+# APPLICATION DEFINITION
+# =============================================================================
+
+DJANGO_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django.contrib.sites',
+]
+
+THIRD_PARTY_APPS = [
+    # Django REST Framework
+    'rest_framework',
+    'corsheaders',
+    
+    # Authentication
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    
+    # API Documentation
+    'drf_spectacular',
+]
+
+LOCAL_APPS = [
+    'core',
+    'apps.accounts',
+    # Future apps:
+    # 'apps.commerce',
+    # 'apps.inventory',
+    # 'apps.accounting',
+    # 'apps.compliance',
+    # 'apps.payments',
+    # 'apps.integrations',
+]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+# =============================================================================
+# MIDDLEWARE
+# =============================================================================
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
+    # Custom middleware (add after implementation)
+    # 'core.middleware.TenantMiddleware',
+    # 'core.middleware.AuditMiddleware',
+]
+
+ROOT_URLCONF = 'config.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                'django.contrib.messages.context_processors.messages',
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = 'config.wsgi.application'
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+DATABASES = {
+    'default': env.db(
+        'DATABASE_URL',
+        default='postgres://postgres:postgres@localhost:5432/singapore_smb'
+    )
+}
+
+# Ensure decimal precision for financial data
+DATABASES['default']['OPTIONS'] = {
+    'options': '-c statement_timeout=30000'  # 30 second query timeout
+}
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+
+AUTH_USER_MODEL = 'accounts.User'
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+
+# django-allauth settings
+SITE_ID = 1
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+
+# Password validation
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 10},
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
+
+# =============================================================================
+# REST FRAMEWORK
+# =============================================================================
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'core.exceptions.custom_exception_handler',
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+}
+
+# JWT Settings
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+}
+
+# =============================================================================
+# API DOCUMENTATION (drf-spectacular)
+# =============================================================================
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Singapore SMB E-commerce API',
+    'DESCRIPTION': 'API for managing e-commerce, inventory, and accounting for Singapore SMBs',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]',
+}
+
+# =============================================================================
+# CACHE
+# =============================================================================
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_URL', default='redis://localhost:6379/0'),
+    }
+}
+
+# =============================================================================
+# CELERY
+# =============================================================================
+
+CELERY_BROKER_URL = env('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = env('REDIS_URL', default='redis://localhost:6379/1')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Singapore'
+CELERY_ENABLE_UTC = True
+
+# Task routing
+CELERY_TASK_ROUTES = {
+    'apps.commerce.tasks.*': {'queue': 'commerce'},
+    'apps.inventory.tasks.*': {'queue': 'inventory'},
+    'apps.accounting.tasks.*': {'queue': 'accounting'},
+    'apps.payments.tasks.*': {'queue': 'payments'},
+}
+
+# =============================================================================
+# INTERNATIONALIZATION
+# =============================================================================
+
+LANGUAGE_CODE = 'en-sg'
+TIME_ZONE = 'Asia/Singapore'
+USE_I18N = True
+USE_TZ = True
+
+# =============================================================================
+# STATIC AND MEDIA FILES
+# =============================================================================
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# =============================================================================
+# CORS
+# =============================================================================
+
+CORS_ALLOWED_ORIGINS = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=['http://localhost:3000', 'http://127.0.0.1:3000']
+)
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'django.log',
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': env('DJANGO_LOG_LEVEL', default='INFO'),
+            'propagate': False,
+        },
+        'apps': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+
+# =============================================================================
+# BUSINESS SETTINGS - SINGAPORE SPECIFIC
+# =============================================================================
+
+# GST Configuration
+GST_RATE = Decimal('0.09')  # 9% as of January 1, 2024
+GST_REGISTRATION_THRESHOLD = Decimal('1000000')  # S$1,000,000
+
+# GST Codes
+GST_CODES = [
+    ('SR', 'Standard Rated (9%)'),
+    ('ZR', 'Zero Rated (0%)'),
+    ('ES', 'Exempt Supply'),
+    ('OS', 'Out of Scope'),
+]
+
+# Financial precision settings
+DECIMAL_MAX_DIGITS = 12
+DECIMAL_PLACES = 2
+GST_RATE_DECIMAL_PLACES = 4
+
+# Platform settings
+PLATFORM_NAME = 'Singapore SMB E-commerce Platform'
+PLATFORM_VERSION = '1.0.0'
+
+```
+
+# backend/config/settings/production.py
+```py
+"""
+Django production settings.
+
+These settings extend base.py for production deployment.
+SECURITY WARNING: Review all settings before deploying to production!
+"""
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.redis import RedisIntegration
+
+from .base import *  # noqa: F401, F403
+
+# =============================================================================
+# DEBUG
+# =============================================================================
+
+DEBUG = False
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS')
+
+# =============================================================================
+# SECURITY
+# =============================================================================
+
+# HTTPS/SSL
+SECURE_SSL_REDIRECT = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Cookies
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+
+# HSTS
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+# Content security
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+
+DATABASES = {
+    'default': env.db('DATABASE_URL')
+}
+
+# Connection pooling for production
+DATABASES['default']['CONN_MAX_AGE'] = 60
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
+
+# =============================================================================
+# CACHE
+# =============================================================================
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('REDIS_URL'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# Session using cache
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+SESSION_CACHE_ALIAS = 'default'
+
+# =============================================================================
+# CORS
+# =============================================================================
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS')
+
+# =============================================================================
+# SENTRY ERROR TRACKING
+# =============================================================================
+
+SENTRY_DSN = env('SENTRY_DSN', default='')
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            DjangoIntegration(),
+            CeleryIntegration(),
+            RedisIntegration(),
+        ],
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        send_default_pii=False,  # PDPA compliance
+        environment=env('ENVIRONMENT', default='production'),
+    )
+
+# =============================================================================
+# EMAIL
+# =============================================================================
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = env('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = True
+
+# =============================================================================
+# STATIC FILES
+# =============================================================================
+
+# Use WhiteNoise for static files
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')  # noqa: F405
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+LOGGING['handlers']['file']['filename'] = '/var/log/django/django.log'  # noqa: F405
+LOGGING['root']['level'] = 'WARNING'  # noqa: F405
+
+```
+
+# backend/config/wsgi.py
+```py
+"""
+WSGI config for Singapore SMB E-commerce Platform.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.0/howto/deployment/wsgi/
+"""
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.production')
+
+application = get_wsgi_application()
+
+```
+
+# backend/config/asgi.py
+```py
+"""
+ASGI config for Singapore SMB E-commerce Platform.
+
+It exposes the ASGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/5.0/howto/deployment/asgi/
+"""
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.production')
+
+application = get_asgi_application()
+
+```
+
+# backend/config/celery.py
+```py
+"""
+Celery configuration for Singapore SMB E-commerce Platform.
+
+This module configures the Celery application for asynchronous task processing.
+"""
+import os
+from celery import Celery
+from celery.schedules import crontab
+
+# Set the default Django settings module
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.development')
+
+# Create Celery app
+app = Celery('singapore_smb')
+
+# Configure Celery using Django settings
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Auto-discover tasks from installed apps
+app.autodiscover_tasks()
+
+# =============================================================================
+# TASK QUEUES
+# =============================================================================
+
+app.conf.task_queues = {
+    'default': {
+        'exchange': 'default',
+        'routing_key': 'default',
+    },
+    'commerce': {
+        'exchange': 'commerce',
+        'routing_key': 'commerce',
+    },
+    'inventory': {
+        'exchange': 'inventory',
+        'routing_key': 'inventory',
+    },
+    'accounting': {
+        'exchange': 'accounting',
+        'routing_key': 'accounting',
+    },
+    'payments': {
+        'exchange': 'payments',
+        'routing_key': 'payments',
+    },
+    'notifications': {
+        'exchange': 'notifications',
+        'routing_key': 'notifications',
+    },
+}
+
+# =============================================================================
+# BEAT SCHEDULE (Periodic Tasks)
+# =============================================================================
+
+app.conf.beat_schedule = {
+    # Inventory tasks
+    'check-low-stock-every-15-mins': {
+        'task': 'apps.inventory.tasks.check_low_stock',
+        'schedule': crontab(minute='*/15'),
+    },
+    'cleanup-expired-reservations': {
+        'task': 'apps.inventory.tasks.cleanup_expired_reservations',
+        'schedule': crontab(minute='*/5'),
+    },
+    
+    # Commerce tasks
+    'cleanup-abandoned-carts-daily': {
+        'task': 'apps.commerce.tasks.cleanup_abandoned_carts',
+        'schedule': crontab(hour=2, minute=0),  # 2 AM daily
+    },
+    
+    # Accounting tasks
+    'generate-daily-reports': {
+        'task': 'apps.accounting.tasks.generate_daily_reports',
+        'schedule': crontab(hour=0, minute=30),  # 12:30 AM daily
+    },
+    'gst-filing-reminder': {
+        'task': 'apps.accounting.tasks.gst_filing_reminder',
+        'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 1st of month, 9 AM
+    },
+    
+    # Compliance tasks
+    'pdpa-data-retention-cleanup': {
+        'task': 'apps.compliance.tasks.pdpa_data_retention_cleanup',
+        'schedule': crontab(hour=3, minute=0),  # 3 AM daily
+    },
+}
+
+# =============================================================================
+# TASK ANNOTATIONS
+# =============================================================================
+
+app.conf.task_annotations = {
+    '*': {
+        'rate_limit': '100/s',  # Default rate limit
+    },
+    'apps.payments.tasks.*': {
+        'rate_limit': '10/s',  # Lower rate for payment tasks
+        'max_retries': 3,
+    },
+}
+
+# =============================================================================
+# DEBUG TASK
+# =============================================================================
+
+@app.task(bind=True, ignore_result=True)
+def debug_task(self):
+    """Debug task to verify Celery is working."""
+    print(f'Request: {self.request!r}')
+
+```
+
+# backend/config/urls.py
+```py
+"""
+URL configuration for Singapore SMB E-commerce Platform.
+
+The `urlpatterns` list routes URLs to views.
+"""
+from django.contrib import admin
+from django.urls import path, include
+from django.http import JsonResponse
+from django.conf import settings
+from django.conf.urls.static import static
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
+)
+
+
+def health_check(request):
+    """Health check endpoint for load balancers and monitoring."""
+    return JsonResponse({
+        'status': 'ok',
+        'version': settings.PLATFORM_VERSION,
+    })
+
+
+urlpatterns = [
+    # Health check (no auth required)
+    path('health/', health_check, name='health-check'),
+    
+    # Django Admin
+    path('admin/', admin.site.urls),
+    
+    # API v1
+    path('api/v1/', include([
+        path('accounts/', include('apps.accounts.urls', namespace='accounts')),
+        # Future API endpoints:
+        # path('commerce/', include('apps.commerce.urls', namespace='commerce')),
+        # path('inventory/', include('apps.inventory.urls', namespace='inventory')),
+        # path('accounting/', include('apps.accounting.urls', namespace='accounting')),
+        # path('compliance/', include('apps.compliance.urls', namespace='compliance')),
+        # path('payments/', include('apps.payments.urls', namespace='payments')),
+    ])),
+    
+    # API Documentation
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+]
+
+# Debug toolbar URLs (development only)
+if settings.DEBUG:
+    import debug_toolbar
+    urlpatterns = [
+        path('__debug__/', include(debug_toolbar.urls)),
+    ] + urlpatterns
+    
+    # Serve media files in development
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+```
+
