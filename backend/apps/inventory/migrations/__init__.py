@@ -1,0 +1,2 @@
+# Inventory migrations package
+
