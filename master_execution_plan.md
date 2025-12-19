@@ -541,6 +541,22 @@ This document outlines the comprehensive implementation plan for the Singapore S
 
 ### Phase 1 Verification Plan
 
+**Database Migration Strategy**:
+```bash
+cd backend
+# Verify migrations are correct before applying
+uv run python manage.py makemigrations --check --dry-run
+
+# Create initial migrations
+uv run python manage.py makemigrations
+
+# Apply migrations
+uv run python manage.py migrate
+
+# Verify with showmigrations
+uv run python manage.py showmigrations
+```
+
 **Unit Tests**:
 ```bash
 cd backend
@@ -1505,6 +1521,143 @@ uv run pytest apps/accounting/tests/ -v
 - [ ] Implement shipping rate quote
 - [ ] Implement shipment creation
 - [ ] Implement tracking lookup
+
+---
+
+#### 5.22 `backend/apps/invoicenow/__init__.py`
+
+**Description**: InvoiceNow/PEPPOL integration package.
+
+**Checklist**:
+- [ ] Create empty `__init__.py`
+
+---
+
+#### 5.23 `backend/apps/invoicenow/apps.py`
+
+**Description**: InvoiceNow app configuration.
+
+**Checklist**:
+- [ ] Create `InvoiceNowConfig` class
+
+---
+
+#### 5.24 `backend/apps/invoicenow/models.py`
+
+**Description**: PEPPOL invoice and submission models.
+
+**Features**:
+- `PEPPOLInvoice` with BIS 3.0 fields
+- `InvoiceSubmission` tracking
+- `InvoiceAcknowledgment` for responses
+
+**Checklist**:
+- [ ] Create `PEPPOLInvoice` with legal_monetary_totals JSONB
+- [ ] Create `InvoiceSubmission` with status tracking
+- [ ] Create `InvoiceAcknowledgment` for webhook responses
+- [ ] Add indexes for status and submission date
+
+---
+
+#### 5.25 `backend/apps/invoicenow/peppol.py`
+
+**Description**: PEPPOL BIS Billing 3.0 invoice generation.
+
+**Features**:
+- UBL 2.1 XML generation
+- Schema validation
+- legal_monetary_totals generation
+- tax_total with Singapore GST
+
+**Checklist**:
+- [ ] Create `PEPPOLInvoiceGenerator` class
+- [ ] Implement `generate_ubl_xml()` with all required elements
+- [ ] Implement `validate_schema()` against PEPPOL schema
+- [ ] Add legal_monetary_totals generation
+- [ ] Add tax_total generation with GST codes
+
+---
+
+#### 5.26 `backend/apps/invoicenow/xml_signer.py`
+
+**Description**: XML digital signature for PEPPOL documents.
+
+**Features**:
+- XMLDSig signing
+- Certificate management
+- Signature validation
+
+**Checklist**:
+- [ ] Create `XMLSigner` class
+- [ ] Implement `sign_document()` with enveloped signature
+- [ ] Implement certificate loading from settings
+- [ ] Add signature validation method
+
+---
+
+#### 5.27 `backend/apps/invoicenow/access_point.py`
+
+**Description**: Access Point Provider integration.
+
+**Features**:
+- Singapore AP client (e.g., Peppol.sg)
+- Document submission
+- Status polling
+
+**Checklist**:
+- [ ] Create `AccessPointClient` class
+- [ ] Implement `submit_invoice()` method
+- [ ] Implement `check_status()` method
+- [ ] Add retry logic with exponential backoff
+
+---
+
+#### 5.28 `backend/apps/invoicenow/tasks.py`
+
+**Description**: Django Tasks for PEPPOL async operations.
+
+**Features**:
+- Async invoice submission
+- Acknowledgment processing
+- Retry handling
+
+**Checklist**:
+- [ ] Create `submit_peppol_invoice` task
+- [ ] Create `process_peppol_acknowledgment` task
+- [ ] Create `retry_failed_submissions` periodic task
+
+---
+
+#### 5.29 `backend/apps/invoicenow/serializers.py`
+
+**Description**: DRF serializers for PEPPOL invoices.
+
+**Checklist**:
+- [ ] Create `PEPPOLInvoiceSerializer`
+- [ ] Create `InvoiceSubmissionSerializer`
+
+---
+
+#### 5.30 `backend/apps/invoicenow/views.py`
+
+**Description**: API views for PEPPOL operations.
+
+**Interfaces**:
+- `/api/v1/invoicenow/invoices/`
+- `/api/v1/invoicenow/submit/`
+- `/api/v1/invoicenow/status/`
+
+**Checklist**:
+- [ ] Create `PEPPOLInvoiceViewSet`
+- [ ] Add `submit_invoice` action
+- [ ] Add `check_status` action
+
+---
+
+#### 5.31 `backend/apps/invoicenow/urls.py`
+
+**Checklist**:
+- [ ] Register ViewSets with router
 
 ---
 

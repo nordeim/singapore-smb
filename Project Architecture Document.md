@@ -8,12 +8,13 @@
 
 | Attribute | Details |
 |-----------|---------|
-| **Version** | 2.0 |
-| **Date** | December 18, 2025 |
+| **Version** | 2.1 |
+| **Date** | December 19, 2025 |
 | **Status** | Final - Ready for Implementation |
-| **Database** | PostgreSQL 16 |
-| **Backend** | Django 5.x |
-| **Frontend** | Next.js 14 |
+| **Database** | PostgreSQL 16+ |
+| **Backend** | Django 6.0+ |
+| **Frontend** | Next.js 14.2+ |
+| **Python** | 3.12+ |
 
 ---
 
@@ -74,9 +75,9 @@ After deep analysis of the original PAD and PRD documents, I've re-imagined the 
 | **Domain-Driven Design** | Bounded contexts: Commerce, Inventory, Accounting, Compliance |
 | **Clean Architecture** | Entities → Use Cases → Interfaces → Frameworks |
 | **DECIMAL Precision** | All monetary fields use `DECIMAL(12,2)` or `DECIMAL(10,2)` |
-| **Event-Driven** | Domain events via Django signals + Celery |
+| **Event-Driven** | Domain events via Django signals + Celery + Django Tasks |
 | **API-First** | OpenAPI 3.0 specification, versioned endpoints |
-| **Security by Design** | OWASP Top 10, PDPA, PCI DSS tokenization |
+| **Security by Design** | OWASP Top 10, PDPA, PCI DSS tokenization, CSP headers |
 
 ### 2.2 Bounded Contexts
 
@@ -503,6 +504,81 @@ Content-Type: application/json
 | **J&T Express** | Express, Economy | REST API |
 | **SingPost** | Registered, Speedpost | REST API v2.0 |
 
+### 8.3 InvoiceNow (PEPPOL) Integration
+
+| Component | Description | Django 6.0 Feature |
+|-----------|-------------|-------------------|
+| Access Point Provider | Integration via certified AP (Peppol.sg) | Background Tasks for async processing |
+| Document Format | PEPPOL BIS Billing 3.0 UBL | Template Partials for XML generation |
+| Signing | XML digital signature | CSP headers for secure delivery |
+| Acknowledgments | Webhook processing | Tasks framework for retry logic |
+
+```
+backend/apps/invoicenow/
+├── __init__.py
+├── apps.py
+├── models.py           # PEPPOLInvoice, InvoiceSubmission
+├── peppol.py           # BIS 3.0 invoice generation
+├── xml_signer.py       # XMLDSig signing
+├── access_point.py     # AP provider client
+├── tasks.py            # Django Tasks for async submission
+├── serializers.py
+├── views.py
+├── urls.py
+└── tests/
+```
+
+### 8.4 Django 6.0 Content Security Policy (CSP)
+
+Django 6.0 introduced built-in CSP support for enhanced security:
+
+```python
+# config/settings/base.py
+SECURE_CSP = {
+    "default-src": ["'self'"],
+    "script-src": ["'self'", "'nonce-{request.csp_nonce}'", "https://js.stripe.com"],
+    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+    "img-src": ["'self'", "https://*.cloudfront.net", "data:", "blob:"],
+    "connect-src": ["'self'", "https://api.stripe.com", "https://api.hit-pay.com"],
+    "frame-src": ["https://js.stripe.com", "https://paynow.sg"],
+    "font-src": ["'self'", "https://fonts.gstatic.com"],
+    "report-uri": "/api/v1/csp-report/",
+}
+
+MIDDLEWARE = [
+    ...
+    'django.middleware.security.ContentSecurityPolicyMiddleware',
+    ...
+]
+```
+
+### 8.5 Hybrid Background Processing (Celery + Django Tasks)
+
+| Use Case | Approach | Rationale |
+|----------|----------|-----------|
+| GST filing notifications | Django Tasks | Simple async, built-in |
+| PDPA consent emails | Django Tasks | Low volume, simple |
+| PEPPOL acknowledgments | Django Tasks | Event-driven, lightweight |
+| Marketplace inventory sync | Celery | High volume, complex |
+| Bulk order processing | Celery | CPU-intensive, distributed |
+| Large data imports | Celery | Long-running, needs monitoring |
+
+```python
+# Django 6.0 Tasks example
+from django.tasks import task
+
+@task
+def send_gst_filing_notification(company_id: int, filing_id: str):
+    """Send GST filing confirmation via Django Tasks"""
+    company = Company.objects.get(id=company_id)
+    send_mail(
+        subject=f"GST Filing {filing_id} Submitted",
+        message=f"Your GST F5 return has been submitted successfully.",
+        from_email="gst@company.sg",
+        recipient_list=[company.email],
+    )
+```
+
 ---
 
 ## 9. Performance Architecture
@@ -611,12 +687,13 @@ Content-Type: application/json
 
 | Component | Version | Purpose |
 |-----------|---------|---------|
-| Python | 3.11+ | Runtime |
-| Django | 5.x | Web framework |
-| DRF | 3.14+ | REST API |
-| PostgreSQL | 16.x | Primary database |
-| Redis | 7.x | Cache & queue |
-| Next.js | 14.x | Frontend |
+| Python | 3.12+ | Runtime (Django 6.0 requirement) |
+| Django | 6.0+ | Web framework with CSP, Background Tasks |
+| DRF | 3.16+ | REST API |
+| PostgreSQL | 16+ | Primary database |
+| Redis | 7.4+ | Cache & queue |
+| Celery | 5.5+ | Heavy async tasks |
+| Next.js | 14.2+ | Frontend |
 | TypeScript | 5.x | Type safety |
 | Docker | 24+ | Containerization |
 

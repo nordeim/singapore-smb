@@ -18,10 +18,11 @@ A **unified platform for Singapore SMBs** combining:
 ### Core Technology Stack
 
 ```
-Backend:   Django 5.x + DRF + Celery
-Frontend:  Next.js 14 + React + TypeScript
-Database:  PostgreSQL 15 + Redis 7.x
+Backend:   Django 6.0+ + DRF + Celery + Django Tasks
+Frontend:  Next.js 14.2+ + React 18 + TypeScript
+Database:  PostgreSQL 16+ + Redis 7.4+
 Infra:     AWS ECS Fargate (Singapore region)
+Python:    3.12+
 ```
 
 ---
@@ -323,15 +324,39 @@ Before committing any code, verify:
 
 ## 🆘 Common Gotchas
 
-### 1. GST Rate History
+### 1. GST Rate History (Complete)
 
 ```python
-# GST rate changed from 8% to 9% on January 1, 2024
-# Always check transaction date for historical calculations
+# Singapore GST rate history - use for historical tax calculations
+from datetime import date
+from decimal import Decimal
+
 def get_gst_rate(transaction_date: date) -> Decimal:
-    if transaction_date < date(2024, 1, 1):
-        return Decimal('0.08')
-    return Decimal('0.09')
+    """
+    Get historical GST rate for Singapore transactions.
+    
+    GST History:
+    - April 1, 1994: GST introduced at 3%
+    - January 1, 2003: Increased to 4%
+    - January 1, 2004: Increased to 5%
+    - July 1, 2007: Increased to 7%
+    - January 1, 2023: Increased to 8%
+    - January 1, 2024: Increased to 9% (current)
+    """
+    GST_RATES = [
+        (date(2024, 1, 1), Decimal('0.09')),  # Current rate
+        (date(2023, 1, 1), Decimal('0.08')),  # 2023
+        (date(2007, 7, 1), Decimal('0.07')),  # 2007-2022
+        (date(2004, 1, 1), Decimal('0.05')),  # 2004-2007
+        (date(2003, 1, 1), Decimal('0.04')),  # 2003
+        (date(1994, 4, 1), Decimal('0.03')),  # GST introduction
+        (date.min, Decimal('0.00'))           # Before GST
+    ]
+    
+    for effective_date, rate in GST_RATES:
+        if transaction_date >= effective_date:
+            return rate
+    return Decimal('0.00')
 ```
 
 ### 2. Singapore Address Format

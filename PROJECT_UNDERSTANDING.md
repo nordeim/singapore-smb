@@ -67,6 +67,8 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 | Inventory Inaccuracy | 23% discrepancy | Real-time multi-location sync | S$88,000 revenue saved |
 | Manual Data Entry | 16 hours/week | 60% automation | S$38,400 labor saved |
 | Checkout Abandonment | 68% abandonment | Mobile-optimized PWA | S$120,000 revenue lift |
+| Compliance Penalties | Manual compliance | Automated PDPA/GST monitoring | S$16,400 risk avoided |
+| **TOTAL** | - | - | **S$390,000** |
 
 ### 2.3 User Personas
 
@@ -89,13 +91,13 @@ A **unified business platform** for Singapore Small and Medium Businesses (SMBs)
 
 | Layer | Technology | Version | Rationale |
 |-------|------------|---------|-----------|
-| **Backend Framework** | Django | 5.x | Financial precision, built-in admin, ORM as source of truth |
-| **API Layer** | Django REST Framework | 3.14+ | JWT auth, serialization, versioning |
-| **Frontend Framework** | Next.js | 14+ | App Router, SSR/SSG, PWA support |
-| **Language** | Python / TypeScript | 3.11+ / 5.x | Type safety, ecosystem |
-| **Database** | PostgreSQL | 15+ | ACID compliance, DECIMAL precision, JSONB |
-| **Cache** | Redis | 7.x | Inventory locks, session management, Celery broker |
-| **Queue** | Celery | 5.3+ | Async order processing, marketplace sync |
+| **Backend Framework** | Django | 6.0+ | Financial precision, built-in admin, ORM as source of truth, CSP support |
+| **API Layer** | Django REST Framework | 3.16+ | JWT auth, serialization, versioning |
+| **Frontend Framework** | Next.js | 14.2+ | App Router, SSR/SSG, PWA support |
+| **Language** | Python / TypeScript | 3.12+ / 5.x | Type safety, Django 6.0 requires Python 3.12+ |
+| **Database** | PostgreSQL | 16+ | ACID compliance, DECIMAL precision, JSONB |
+| **Cache** | Redis | 7.4+ | Inventory locks, session management, Celery broker |
+| **Queue** | Celery + Django Tasks | 5.5+ | Async order processing, marketplace sync (hybrid approach) |
 | **Search** | PostgreSQL tsvector | - | Cost-effective for MVP (Elasticsearch for scale) |
 | **Infrastructure** | AWS ECS Fargate | - | Cost-effective, managed containers |
 | **CDN** | CloudFront | - | Global edge caching |
@@ -293,6 +295,29 @@ class Customer(models.Model):
 - **Standard**: PEPPOL BIS Billing 3.0
 - **Integration**: Via Singapore Access Point Providers (e.g., Peppol.sg)
 - **Requirement**: B2G (Business-to-Government) transactions must use PEPPOL
+
+#### PEPPOL BIS 3.0 Invoice Structure
+
+```python
+# Required PEPPOL legal_monetary_totals structure
+peppol_invoice = {
+    'legal_monetary_totals': {
+        'line_extension_amount': Decimal('0.00'),      # Sum of line amounts
+        'tax_exclusive_amount': Decimal('0.00'),       # Total before tax
+        'tax_inclusive_amount': Decimal('0.00'),       # Total after tax
+        'allowance_total_amount': Decimal('0.00'),     # Total discounts
+        'charge_total_amount': Decimal('0.00'),        # Shipping charges
+        'prepaid_amount': Decimal('0.00'),             # Amount already paid
+        'payable_amount': Decimal('0.00'),             # Amount due
+    },
+    'tax_total': {
+        'taxable_amount': Decimal('0.00'),
+        'tax_amount': Decimal('0.00'),
+        'percent': Decimal('9.00'),                    # Singapore GST rate
+        'tax_category_code': 'S',                      # Standard rated
+    }
+}
+```
 
 ### 5.4 Industry-Specific Licenses
 
