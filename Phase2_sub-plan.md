@@ -695,4 +695,48 @@ print(f"Subtotal: {subtotal}, GST: {gst}, Total: {total}")
 
 ---
 
-**Approval Required**: Please review and approve this plan before I proceed with execution.
+# Phase 2: Commerce Domain Implementation
+
+## Phase 2 Structure
+- [x] Create [apps/commerce/__init__.py](file:///home/project/singapore-smb/backend/apps/commerce/__init__.py) and [apps.py](file:///home/project/singapore-smb/backend/apps/commerce/apps.py)
+- [x] Add `apps.commerce` to INSTALLED_APPS
+- [x] Update main URLs to include commerce
+
+## Phase 2 Models
+- [x] [category.py](file:///home/project/singapore-smb/backend/apps/commerce/models/category.py) - Category with hierarchical structure, SEO fields
+- [x] [product.py](file:///home/project/singapore-smb/backend/apps/commerce/models/product.py) - Product with DECIMAL pricing, GST codes, variants
+- [x] [customer.py](file:///home/project/singapore-smb/backend/apps/commerce/models/customer.py) - Customer with PDPA consent, B2B fields
+- [x] [cart.py](file:///home/project/singapore-smb/backend/apps/commerce/models/cart.py) - Cart with guest support, expiry, checkout
+- [x] [order.py](file:///home/project/singapore-smb/backend/apps/commerce/models/order.py) - Order with status state machine, GST reporting
+- [x] [models/__init__.py](file:///home/project/singapore-smb/backend/apps/commerce/models/__init__.py) - Export all models
+
+## Phase 2 Services
+- [x] [services/__init__.py](file:///home/project/singapore-smb/backend/apps/commerce/services/__init__.py) - Package exports
+- [x] [product_service.py](file:///home/project/singapore-smb/backend/apps/commerce/services/product_service.py) - CRUD, search, GST calculation
+- [x] [cart_service.py](file:///home/project/singapore-smb/backend/apps/commerce/services/cart_service.py) - Add items, merge, checkout
+- [x] [order_service.py](file:///home/project/singapore-smb/backend/apps/commerce/services/order_service.py) - Status transitions, GST reporting
+
+## Phase 2 API Layer
+- [x] [serializers.py](file:///home/project/singapore-smb/backend/apps/commerce/serializers.py) - 14 serializers for all models
+- [x] [views.py](file:///home/project/singapore-smb/backend/apps/commerce/views.py) - 5 ViewSets with custom actions
+- [x] [urls.py](file:///home/project/singapore-smb/backend/config/urls.py) - Router configuration
+- [x] [admin.py](file:///home/project/singapore-smb/backend/apps/commerce/admin.py) - Admin for all models with inlines
+
+## Phase 2 Tasks
+- [x] [tasks.py](file:///home/project/singapore-smb/backend/apps/commerce/tasks.py) - Celery tasks for orders, cart cleanup
+
+## Phase 2 Tests
+- [x] [tests/__init__.py](file:///home/project/singapore-smb/backend/apps/commerce/tests/__init__.py)
+- [x] [tests/factories.py](file:///home/project/singapore-smb/backend/apps/commerce/tests/factories.py) - 9 factories
+- [x] [tests/test_models.py](file:///home/project/singapore-smb/backend/apps/accounts/tests/test_models.py) - 30 tests
+- [x] [tests/test_services.py](file:///home/project/singapore-smb/backend/apps/accounts/tests/test_services.py) - 17 tests
+- [x] [tests/test_views.py](file:///home/project/singapore-smb/backend/apps/commerce/tests/test_views.py) - 17 tests
+
+## Phase 2 Migrations
+- [x] [0001_create_schema.py](file:///home/project/singapore-smb/backend/apps/commerce/migrations/0001_create_schema.py) - PostgreSQL commerce schema
+- [x] `0002_models.py` - All commerce tables with indexes
+
+## Verification
+- [x] Django check passes (0 issues)
+- [x] Migrations created successfully
+- [x] **64/64 tests PASSED**

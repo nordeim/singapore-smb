@@ -63,8 +63,8 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     'core',
     'apps.accounts',
+    'apps.commerce',
     # Future apps:
-    # 'apps.commerce',
     # 'apps.inventory',
     # 'apps.accounting',
     # 'apps.compliance',

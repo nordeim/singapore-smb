@@ -25,6 +25,7 @@ dependencies = [
     "pytest>=9.0.2",
     "pytest-django>=4.11.1",
     "factory-boy>=3.3.3",
+    "django-filter>=25.2",
 ]
 
 [project.optional-dependencies]

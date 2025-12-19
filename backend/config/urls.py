@@ -33,8 +33,8 @@ urlpatterns = [
     # API v1
     path('api/v1/', include([
         path('accounts/', include('apps.accounts.urls', namespace='accounts')),
+        path('commerce/', include('apps.commerce.urls', namespace='commerce')),
         # Future API endpoints:
-        # path('commerce/', include('apps.commerce.urls', namespace='commerce')),
         # path('inventory/', include('apps.inventory.urls', namespace='inventory')),
         # path('accounting/', include('apps.accounting.urls', namespace='accounting')),
         # path('compliance/', include('apps.compliance.urls', namespace='compliance')),
