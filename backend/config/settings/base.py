@@ -146,9 +146,8 @@ AUTHENTICATION_BACKENDS = [
 
 # django-allauth settings
 SITE_ID = 1
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 
@@ -347,13 +346,14 @@ LOGGING = {
 # =============================================================================
 
 # GST Configuration
-GST_RATE = Decimal('0.09')  # 9% as of January 1, 2024
+GST_DEFAULT_RATE = env('GST_DEFAULT_RATE', default=Decimal('0.09'), cast=Decimal)
+GST_RATE = GST_DEFAULT_RATE
 GST_REGISTRATION_THRESHOLD = Decimal('1000000')  # S$1,000,000
 
 # GST Codes
 GST_CODES = [
-    ('SR', 'Standard Rated (9%)'),
-    ('ZR', 'Zero Rated (0%)'),
+    ('SR', 'Standard Rated'),
+    ('ZR', 'Zero Rated'),
     ('ES', 'Exempt Supply'),
     ('OS', 'Out of Scope'),
 ]

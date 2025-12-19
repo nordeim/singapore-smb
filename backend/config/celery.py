@@ -54,39 +54,42 @@ app.conf.task_queues = {
 # BEAT SCHEDULE (Periodic Tasks)
 # =============================================================================
 
-app.conf.beat_schedule = {
-    # Inventory tasks
-    'check-low-stock-every-15-mins': {
-        'task': 'apps.inventory.tasks.check_low_stock',
-        'schedule': crontab(minute='*/15'),
-    },
-    'cleanup-expired-reservations': {
-        'task': 'apps.inventory.tasks.cleanup_expired_reservations',
-        'schedule': crontab(minute='*/5'),
-    },
-    
-    # Commerce tasks
-    'cleanup-abandoned-carts-daily': {
-        'task': 'apps.commerce.tasks.cleanup_abandoned_carts',
-        'schedule': crontab(hour=2, minute=0),  # 2 AM daily
-    },
-    
-    # Accounting tasks
-    'generate-daily-reports': {
-        'task': 'apps.accounting.tasks.generate_daily_reports',
-        'schedule': crontab(hour=0, minute=30),  # 12:30 AM daily
-    },
-    'gst-filing-reminder': {
-        'task': 'apps.accounting.tasks.gst_filing_reminder',
-        'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 1st of month, 9 AM
-    },
-    
-    # Compliance tasks
-    'pdpa-data-retention-cleanup': {
-        'task': 'apps.compliance.tasks.pdpa_data_retention_cleanup',
-        'schedule': crontab(hour=3, minute=0),  # 3 AM daily
-    },
-}
+app.conf.beat_schedule = {}
+
+if os.environ.get('ENABLE_CELERY_BEAT', '') == '1':
+    app.conf.beat_schedule = {
+        # Inventory tasks
+        'check-low-stock-every-15-mins': {
+            'task': 'apps.inventory.tasks.check_low_stock',
+            'schedule': crontab(minute='*/15'),
+        },
+        'cleanup-expired-reservations': {
+            'task': 'apps.inventory.tasks.cleanup_expired_reservations',
+            'schedule': crontab(minute='*/5'),
+        },
+        
+        # Commerce tasks
+        'cleanup-abandoned-carts-daily': {
+            'task': 'apps.commerce.tasks.cleanup_abandoned_carts',
+            'schedule': crontab(hour=2, minute=0),  # 2 AM daily
+        },
+        
+        # Accounting tasks
+        'generate-daily-reports': {
+            'task': 'apps.accounting.tasks.generate_daily_reports',
+            'schedule': crontab(hour=0, minute=30),  # 12:30 AM daily
+        },
+        'gst-filing-reminder': {
+            'task': 'apps.accounting.tasks.gst_filing_reminder',
+            'schedule': crontab(day_of_month=1, hour=9, minute=0),  # 1st of month, 9 AM
+        },
+        
+        # Compliance tasks
+        'pdpa-data-retention-cleanup': {
+            'task': 'apps.compliance.tasks.pdpa_data_retention_cleanup',
+            'schedule': crontab(hour=3, minute=0),  # 3 AM daily
+        },
+    }
 
 # =============================================================================
 # TASK ANNOTATIONS

@@ -30,93 +30,106 @@ CREATE SCHEMA IF NOT EXISTS compliance;
 CREATE TABLE core.companies (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(200) NOT NULL,
-    legal_name VARCHAR(200),
+    legal_name VARCHAR(200) NOT NULL,
     uen VARCHAR(10) UNIQUE NOT NULL,  -- Singapore Unique Entity Number
     
     -- GST Registration
-    gst_registered BOOLEAN DEFAULT FALSE,
-    gst_registration_number VARCHAR(15),
+    gst_registered BOOLEAN NOT NULL DEFAULT FALSE,
+    gst_registration_number VARCHAR(15) NOT NULL,
     gst_registration_date DATE,
     
     -- Contact Information
-    email VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
-    website VARCHAR(255),
+    email VARCHAR(254) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    website VARCHAR(255) NOT NULL,
     
     -- Address
-    address_line1 VARCHAR(255),
-    address_line2 VARCHAR(255),
-    postal_code VARCHAR(6),
-    country VARCHAR(2) DEFAULT 'SG',
+    address_line1 VARCHAR(255) NOT NULL,
+    address_line2 VARCHAR(255) NOT NULL,
+    postal_code VARCHAR(6) NOT NULL,
+    country VARCHAR(2) NOT NULL DEFAULT 'SG',
     
     -- Settings (JSONB for flexibility)
-    settings JSONB DEFAULT '{}',
+    settings JSONB NOT NULL DEFAULT '{}',
     
     -- Subscription
-    plan_tier VARCHAR(20) DEFAULT 'lite' CHECK (plan_tier IN ('lite', 'standard', 'advanced')),
+    plan_tier VARCHAR(20) NOT NULL DEFAULT 'lite' CHECK (plan_tier IN ('lite', 'standard', 'advanced')),
     
     -- Audit
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_companies_uen ON core.companies(uen);
 CREATE INDEX idx_companies_gst ON core.companies(gst_registered) WHERE gst_registered = TRUE;
+CREATE INDEX idx_companies_deleted_at ON core.companies(deleted_at);
 
 -- Users
 CREATE TABLE core.users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID REFERENCES core.companies(id),
+    company_id UUID REFERENCES core.companies(id) ON DELETE CASCADE,
     
     -- Authentication
-    email VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(254) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     
     -- Profile
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    phone VARCHAR(20),
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
     
     -- Status
-    is_active BOOLEAN DEFAULT TRUE,
-    is_verified BOOLEAN DEFAULT FALSE,
-    is_superuser BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_superuser BOOLEAN NOT NULL DEFAULT FALSE,
     
     -- Security
-    mfa_enabled BOOLEAN DEFAULT FALSE,
-    mfa_secret VARCHAR(32),
+    mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    mfa_secret VARCHAR(32) NOT NULL,
     last_login TIMESTAMPTZ,
-    failed_login_attempts INTEGER DEFAULT 0,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TIMESTAMPTZ,
     
     -- Audit
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_users_company ON core.users(company_id);
 CREATE INDEX idx_users_email ON core.users(email);
+CREATE INDEX idx_users_deleted_at ON core.users(deleted_at);
 
 -- Roles and Permissions (RBAC)
 CREATE TABLE core.roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    company_id UUID REFERENCES core.companies(id),
+    company_id UUID REFERENCES core.companies(id) ON DELETE CASCADE,
     name VARCHAR(50) NOT NULL,
-    description TEXT,
-    permissions JSONB DEFAULT '[]',
-    is_system BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    description TEXT NOT NULL,
+    permissions JSONB NOT NULL DEFAULT '[]',
+    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_role_per_company UNIQUE(company_id, name)
 );
 
+CREATE INDEX idx_roles_company ON core.roles(company_id);
+
 CREATE TABLE core.user_roles (
-    user_id UUID REFERENCES core.users(id) ON DELETE CASCADE,
-    role_id UUID REFERENCES core.roles(id) ON DELETE CASCADE,
-    assigned_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    assigned_by UUID REFERENCES core.users(id),
-    PRIMARY KEY (user_id, role_id)
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES core.users(id) ON DELETE CASCADE,
+    role_id UUID NOT NULL REFERENCES core.roles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_by UUID REFERENCES core.users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_user_role UNIQUE(user_id, role_id)
 );
+
+CREATE INDEX idx_user_roles_user ON core.user_roles(user_id);
+CREATE INDEX idx_user_roles_role ON core.user_roles(role_id);
+CREATE INDEX idx_user_roles_assigned_by ON core.user_roles(assigned_by);
 
 -- Sequences (Thread-safe numbering per company)
 CREATE TABLE core.sequences (

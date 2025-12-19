@@ -2,8 +2,8 @@
 
 ## Overview
 A comprehensive e-commerce and inventory management system designed for Singapore SMBs, featuring:
-- **Backend**: Django 5.2+ (Python) for financial precision, GST compliance, and admin operations.
-- **Frontend**: Next.js 16+ (React) for a high-performance, mobile-first PWA storefront.
+- **Backend**: Django 6.0+ (Python 3.12+) for financial precision, GST compliance, and admin operations.
+- **Frontend**: Next.js 14.2+ (React) for a high-performance, mobile-first PWA storefront.
 - **Compliance**: Built-in support for Singapore GST (F5), InvoiceNow (PEPPOL), and PDPA.
 
 ## Project Structure
@@ -16,14 +16,26 @@ A comprehensive e-commerce and inventory management system designed for Singapor
 - Python 3.12+
 - Node.js 20+
 - PostgreSQL 16+
-- Redis 7+
+- Redis 7.4+
 
 ### Backend Setup
 ```bash
+docker compose --env-file .env.docker up -d postgres redis
+
 cd backend
-pip install -e .
-python manage.py migrate
-python manage.py runserver
+uv sync
+
+set -a && source ../.env.docker && set +a
+uv run python manage.py migrate
+uv run python manage.py seed
+uv run python manage.py runserver
+```
+
+### Backend Tests
+```bash
+cd backend
+set -a && source ../.env.docker && set +a
+uv run python -m pytest -q
 ```
 
 ### Frontend Setup
