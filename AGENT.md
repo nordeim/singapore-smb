@@ -1,8 +1,9 @@
 # AGENT.md - AI Coding Agent Briefing Document
 
 > **Project**: Singapore SMB E-Commerce & Integrated Business Platform
-> **Version**: 1.3
+> **Version**: 1.4
 > **Last Updated**: December 20, 2025
+> **Status**: Phase 7 Complete - Full-stack E-Commerce Platform
 
 ---
 
@@ -48,31 +49,36 @@ Python:    3.12+
 
 ---
 
-## 🏗️ Project Structure (Planned)
+## 🏗️ Project Structure (Current)
 
 ```
 singapore-smb/
-├── backend/                    # Django application
+├── backend/                    # Django application (370+ tests)
 │   ├── apps/
-│   │   ├── accounts/          # Authentication, users, RBAC
-│   │   ├── companies/         # Company profiles, GST registration
-│   │   ├── products/          # Product catalog, variants
-│   │   ├── inventory/         # Multi-location stock management
-│   │   ├── orders/            # Order processing, state machine
-│   │   ├── payments/          # Payment gateway integrations
-│   │   ├── accounting/        # Chart of accounts, journal entries
-│   │   ├── gst/               # GST engine, F5 returns
-│   │   ├── pdpa/              # Consent management, data access
-│   │   └── integrations/      # Third-party API adapters
+│   │   ├── accounts/          # ✅ Authentication, users, RBAC
+│   │   ├── companies/         # ✅ Company profiles, GST registration
+│   │   ├── commerce/          # ✅ Products, categories, customers, orders
+│   │   ├── inventory/         # ✅ Multi-location stock management
+│   │   ├── accounting/        # ✅ Chart of accounts, journals
+│   │   ├── compliance/        # ✅ GST engine, PDPA, audit logs
+│   │   ├── payments/          # ✅ Stripe + HitPay gateways
+│   │   └── integrations/      # ✅ NinjaVan, SingPost logistics
 │   ├── config/                # Django settings
-│   └── manage.py
-├── frontend/                   # Next.js application
-│   ├── app/                   # App Router pages
-│   ├── components/            # React components
-│   └── lib/                   # Utilities, API clients
+│   └── core/                  # Base models, permissions
+├── frontend/                   # Next.js 14.2+ application
+│   ├── src/
+│   │   ├── app/               # ✅ App Router (12 routes)
+│   │   │   ├── products/      # Product listing, detail
+│   │   │   ├── cart/          # Shopping cart
+│   │   │   ├── checkout/      # Multi-step checkout
+│   │   │   ├── account/       # User dashboard, orders
+│   │   │   └── login/         # Authentication
+│   │   ├── components/        # ✅ UI, layout, shared
+│   │   └── lib/               # ✅ API client, hooks
+│   └── package.json           # React Query, Tailwind, Stripe
+├── database/                   # PostgreSQL schema
 ├── docker/                     # Docker configurations
-├── docs/                       # Documentation
-└── tests/                      # Test suites
+└── docs/                       # Documentation
 ```
 
 ---

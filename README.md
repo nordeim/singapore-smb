@@ -3,18 +3,19 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg?style=flat-square&logo=python)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-6.0+-green.svg?style=flat-square&logo=django)](https://www.djangoproject.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2+-black.svg?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791.svg?style=flat-square&logo=postgresql)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.4+-DC382D.svg?style=flat-square&logo=redis)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-24+-2496ED.svg?style=flat-square&logo=docker)](https://www.docker.com/)
-[![Tests](https://img.shields.io/badge/Tests-61%20passing-brightgreen?style=flat-square)](backend/apps)
-![Phase Status](https://img.shields.io/badge/Phase-1%20%E2%9C%85%20(Foundation)-0055FF?style=flat-square)
+[![Tests](https://img.shields.io/badge/Backend_Tests-370%2B_passing-brightgreen?style=flat-square)](backend/apps)
+![Phase Status](https://img.shields.io/badge/Phase-7%20%E2%9C%85%20(Frontend%20Complete)-0055FF?style=flat-square)
 [![Singapore](https://img.shields.io/badge/Singapore-%F0%9F%87%B8%F0%9F%87%AC-orange?style=flat-square)](https://www.irs.gov.sg/)
 
-✅ **Phase 1 Complete** - Foundation ready for development<br/>
-🚀 **Next**: Commerce Domain (Products, Orders, Cart)<br/>
-🇸🇬 **Built for Singapore** - UEN validation, GST framework, PDPA foundation
+✅ **Phase 7 Complete** - Full-stack e-commerce platform ready<br/>
+🚀 **Next**: Phase 8 - Testing & Deployment<br/>
+🇸🇬 **Built for Singapore** - GST compliance, PayNow, PDPA, InvoiceNow
 
-[📋 Phase 1 Documentation](docs/PHASE1_STATUS.md) | [🗺️ Development Roadmap](docs/ROADMAP.md) | [🧩 Project Architecture](docs/ARCHITECTURE.md)
+[📋 Project Documentation](docs/) | [🗺️ Development Roadmap](docs/ROADMAP.md) | [🧩 Project Architecture](Project%20Architecture%20Document.md)
 
 ---
 
@@ -22,7 +23,10 @@
 
 A **compliance-first business platform** for Singapore Small and Medium Businesses that integrates e-commerce, inventory management, and automated accounting with Singapore-specific regulatory requirements.
 
-**Currently in Phase 1 (Foundation)**, this project establishes the robust backend infrastructure required for a production-ready SMB platform. We're building a **financial-grade system** where accuracy, compliance, and reliability are non-negotiable.
+**Phase 7 (Frontend Features) Complete**, this project now provides a full-stack solution with:
+- **Backend**: Django 6.0+ REST API (370+ tests passing)
+- **Frontend**: Next.js 14.2+ storefront with checkout flow
+- **Database**: PostgreSQL 16+ with comprehensive schema
 
 ### 🇸🇬 Why Singapore SMBs Need This
 
@@ -32,36 +36,36 @@ Singapore SMBs face unique challenges:
 - **Mobile-first customers**: 70% of Singapore shoppers use smartphones
 - **Compliance burden**: PDPA, ACRA, and IRAS requirements require specialized handling
 
-Our solution starts with a **rock-solid foundation** that ensures:
+Our solution provides:
 - ✅ **Financial precision**: DECIMAL arithmetic, no floating-point errors
 - ✅ **Multi-tenant isolation**: Company data completely separated via RLS
-- ✅ **Singapore compliance**: UEN validation, GST framework, PDPA consent foundation
-- ✅ **Production-ready architecture**: Dockerized, tested, and secured from day one
+- ✅ **Singapore compliance**: GST engine, PDPA consent, PEPPOL/InvoiceNow ready
+- ✅ **Full e-commerce flow**: Products, cart, checkout with Stripe & PayNow
 
 ---
 
-## 🚀 Current Capabilities (Phase 1 Complete)
+## 🚀 Current Capabilities (Phase 7 Complete)
 
-### ✅ Core Foundation
+### ✅ Backend (Phases 1-5)
 - **Multi-tenant architecture**: Companies isolated via PostgreSQL Row-Level Security
 - **Authentication system**: JWT + django-allauth with email-based login
-- **Role-Based Access Control**: Owner, admin, finance, warehouse, sales roles
-- **Singapore UEN validation**: Business registration number validation
-- **Audit trail framework**: All changes tracked with user context
-- **Soft delete capability**: Recoverable entity deletion
+- **Commerce Domain**: Products, variants, categories, customers, orders
+- **Inventory Domain**: Multi-location, Redis locks, reservations, movements
+- **Accounting Domain**: Chart of accounts, journal entries, invoices, payments
+- **GST Engine**: Historical rates, F5 preparation, PEPPOL fields
+- **PDPA Compliance**: Consent tracking, data access requests, audit logging
+- **Payment Gateways**: Stripe + HitPay integration
+- **Logistics**: NinjaVan + SingPost multi-carrier support
 
-### ✅ Compliance Foundation
-- **GST rate configuration**: Historical GST rates (3% → 9%) with date-based lookup
-- **PDPA consent framework**: Explicit consent tracking foundation
-- **Financial precision**: All monetary fields use `DECIMAL(12,2)` - no floats
-- **Multi-currency ready**: Base currency SGD with framework for expansion
-
-### ✅ Developer Experience
-- **Dockerized local development**: PostgreSQL 16 + Redis 7.4 in containers
-- **Automated testing**: 61 passing unit/integration tests
-- **Migrations and seeding**: One-command database setup
-- **Type-safe development**: Python 3.12 type hints throughout
-- **Modern toolchain**: `uv` for dependency management
+### ✅ Frontend (Phases 6-7)
+- **Next.js 14.2+ App Router**: Server and Client components
+- **Product Pages**: Listing, detail, search, filters, pagination
+- **Shopping Cart**: Add/remove items, quantity controls, GST display
+- **Checkout Flow**: Multi-step (Address → Payment → Review)
+- **Payment Integration**: Stripe Elements placeholder + PayNow QR
+- **Account Pages**: Dashboard, order history, order detail
+- **Auth Pages**: Login, registration with PDPA consent
+- **UI Components**: Design system with Tailwind CSS 4
 
 ---
 
@@ -144,33 +148,30 @@ uv run python manage.py runserver 0.0.0.0:8000
 
 ```
 singapore-smb/
-├── backend/                    # Django application (Phase 1 complete)
+├── backend/                    # Django application (Phases 1-5 complete)
 │   ├── apps/
 │   │   ├── accounts/          # ✅ Authentication, users, RBAC
 │   │   ├── companies/         # ✅ Multi-tenancy foundation
-│   │   ├── compliance/        # ✅ GST engine, PDPA framework
-│   │   └── core/              # ✅ Base models, exceptions, permissions
+│   │   ├── commerce/          # ✅ Products, orders, customers
+│   │   ├── inventory/         # ✅ Stock management, reservations
+│   │   ├── accounting/        # ✅ Chart of accounts, journals
+│   │   ├── compliance/        # ✅ GST engine, PDPA, audit logs
+│   │   ├── payments/          # ✅ Stripe, HitPay integration
+│   │   └── integrations/      # ✅ Logistics (NinjaVan, SingPost)
 │   ├── config/                # ✅ Django settings, URLs, Celery
-│   ├── docker/                # ✅ Local development scripts
-│   ├── docs/                  # Project documentation
-│   ├── tests/                 # ✅ Comprehensive test suite
-│   ├── manage.py              # Django CLI entry point
-│   ├── pyproject.toml         # Dependency specifications
-│   └── uv.lock                # Frozen dependencies
+│   ├── core/                  # ✅ Base models, permissions, exceptions
+│   └── tests/                 # ✅ 370+ passing tests
+├── frontend/                   # Next.js application (Phases 6-7 complete)
+│   ├── src/
+│   │   ├── app/               # ✅ App Router pages (12 routes)
+│   │   ├── components/        # ✅ UI components, layouts
+│   │   └── lib/               # ✅ API client, hooks, utilities
+│   └── package.json           # React Query, Tailwind, Stripe
 ├── database/
-│   └── schema.sql             # ✅ PostgreSQL 16 schema definition
+│   └── schema.sql             # ✅ PostgreSQL 16 schema
 ├── docker/
-│   ├── scripts/               # ✅ Migration and seed scripts
-│   └── docker-compose.yml     # ✅ Local DB container setup
-├── docs/
-│   ├── ARCHITECTURE.md        # Detailed architecture decisions
-│   ├── PHASE1_STATUS.md       # ✅ Phase 1 completion report
-│   └── ROADMAP.md             # Implementation roadmap
-├── .env.docker                # ✅ Docker environment configuration
-├── .dockerignore              # ✅ Docker build optimization
-├── Dockerfile                 # ✅ Backend container definition
-├── LICENSE                    # MIT license
-└── README.md                  # This file
+│   └── docker-compose.yml     # ✅ Local DB containers
+└── docs/                       # Project documentation
 ```
 
 ---
@@ -206,15 +207,16 @@ uv run pytest apps/accounts/tests/test_models.py -v
 
 | **Phase** | **Duration** | **Focus** | **Status** | **Key Deliverables** |
 |-----------|--------------|-----------|------------|---------------------|
-| **Phase 1** | Weeks 1-3 | ✅ **Foundation** | **COMPLETE** | Django setup, auth, multi-tenancy, compliance foundation |
-| **Phase 2** | Weeks 4-6 | 🔄 **Commerce Domain** | In Progress | Products, categories, customers, orders, cart |
-| **Phase 3** | Weeks 7-9 | ⏳ **Inventory Domain** | Planned | Locations, stock levels, movements, reservations |
-| **Phase 4** | Weeks 10-12 | ⏳ **Accounting Domain** | Planned | Chart of accounts, journals, invoices, GST engine |
-| **Phase 5** | Weeks 13-15 | ⏳ **Compliance & Integrations** | Planned | PDPA, audit logs, payment gateways, logistics |
-| **Phase 6-7** | Weeks 16-22 | ⏳ **Frontend** | Planned | Next.js storefront, checkout, PWA, mobile optimization |
-| **Phase 8** | Weeks 23-28 | ⏳ **Testing & Deployment** | Planned | E2E tests, security audit, production launch |
+| **Phase 1** | Weeks 1-3 | Foundation | ✅ **COMPLETE** | Django setup, auth, multi-tenancy |
+| **Phase 2** | Weeks 4-6 | Commerce Domain | ✅ **COMPLETE** | Products, categories, customers, orders |
+| **Phase 3** | Weeks 7-9 | Inventory Domain | ✅ **COMPLETE** | Locations, stock levels, movements, reservations |
+| **Phase 4** | Weeks 10-12 | Accounting Domain | ✅ **COMPLETE** | Chart of accounts, journals, invoices, GST engine |
+| **Phase 5** | Weeks 13-15 | Compliance & Integrations | ✅ **COMPLETE** | PDPA, audit logs, Stripe/HitPay, NinjaVan/SingPost |
+| **Phase 6** | Weeks 16-18 | Frontend Foundation | ✅ **COMPLETE** | Next.js setup, UI components, API client |
+| **Phase 7** | Weeks 19-22 | Frontend Features | ✅ **COMPLETE** | Storefront, cart, checkout, account pages |
+| **Phase 8** | Weeks 23-28 | Testing & Deployment | ⏳ Planned | E2E tests, security audit, production launch |
 
-**Current Focus**: Phase 2 - Commerce Domain implementation. See [ROADMAP.md](docs/ROADMAP.md) for detailed sprint planning.
+**Current Focus**: Phase 8 - Testing & Deployment. See [ROADMAP.md](docs/ROADMAP.md) for detailed sprint planning.
 
 ---
 

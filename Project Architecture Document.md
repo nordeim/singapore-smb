@@ -1,6 +1,6 @@
 # Singapore SMB E-Commerce Platform
 ## Project Architecture Document (PAD)
-### Version 2.0 - Re-imagined Architecture
+### Version 2.2 - Full-Stack Implementation
 
 ---
 
@@ -8,18 +8,22 @@
 
 | Attribute | Details |
 |-----------|---------|
-| **Version** | 2.1 |
-| **Date** | December 19, 2025 |
-| **Status** | Final - Ready for Implementation |
+| **Version** | 2.2 |
+| **Date** | December 20, 2025 |
+| **Status** | Phase 7 Complete - Full-stack E-Commerce Platform |
 | **Database** | PostgreSQL 16+ |
-| **Backend** | Django 6.0+ |
-| **Frontend** | Next.js 14.2+ |
+| **Backend** | Django 6.0+ (370+ tests) |
+| **Frontend** | Next.js 14.2+ (12 routes) |
 | **Python** | 3.12+ |
 
 ---
 
 ## Update Log
 
+- **2025-12-20**: Phase 6-7 Frontend complete.
+  - **Phase 6**: Next.js 14.2+ setup, Tailwind CSS 4, React Query, UI component library, API client, authentication middleware.
+  - **Phase 7**: Product pages (listing, detail), cart, multi-step checkout (Stripe + PayNow), account dashboard, order history.
+  - **12 Frontend Routes**: `/`, `/products`, `/products/[slug]`, `/cart`, `/checkout`, `/checkout/success`, `/account`, `/account/orders`, `/account/orders/[id]`, `/login`, `/register`.
 - **2025-12-19**: Synced PAD with QA-audit-driven schema/design updates.
   - **GST**: Historical rates (`compliance.gst_rates`) and historical lookup in `calculate_gst(amount, gst_code, transaction_date)`.
   - **Orders**: Concurrency-safe order numbering via per-company sequences (`core.sequences`) used by `generate_order_number(company_id)`.
