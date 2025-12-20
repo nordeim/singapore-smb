@@ -57,20 +57,43 @@ class PaymentOrchestrator:
         """
         Get available payment methods for a company.
         
+        Returns methods ordered by priority (Stripe first, then HitPay).
+        
         Returns:
             List of available payment method codes
         """
         methods = []
         
-        # Check Stripe availability
-        if getattr(settings, 'STRIPE_SECRET_KEY', ''):
-            methods.extend(['card', 'apple_pay', 'google_pay'])
+        # Get primary gateway from settings (default: stripe)
+        primary = getattr(settings, 'PAYMENT_PRIMARY_GATEWAY', 'stripe')
         
-        # Check HitPay availability
+        # Check Stripe availability (primary)
+        if getattr(settings, 'STRIPE_SECRET_KEY', ''):
+            stripe_methods = ['card', 'apple_pay', 'google_pay']
+            if primary == 'stripe':
+                methods = stripe_methods + methods
+            else:
+                methods.extend(stripe_methods)
+        
+        # Check HitPay availability (secondary)
         if getattr(settings, 'HITPAY_API_KEY', ''):
-            methods.extend(['paynow', 'grabpay', 'shopee_pay'])
+            hitpay_methods = ['paynow', 'grabpay', 'shopee_pay']
+            if primary == 'hitpay':
+                methods = hitpay_methods + methods
+            else:
+                methods.extend(hitpay_methods)
         
         return methods
+    
+    @staticmethod
+    def get_default_gateway() -> str:
+        """
+        Get the default/primary payment gateway.
+        
+        Returns:
+            Gateway name (stripe or hitpay)
+        """
+        return getattr(settings, 'PAYMENT_PRIMARY_GATEWAY', 'stripe')
     
     @staticmethod
     def get_gateway(gateway_name: str) -> PaymentGatewayAdapter:

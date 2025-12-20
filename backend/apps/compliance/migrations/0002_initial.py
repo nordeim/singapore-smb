@@ -19,8 +19,8 @@ class Migration(migrations.Migration):
     
     dependencies = [
         ('compliance', '0001_create_schema'),
-        ('accounts', '0001_initial'),
-        ('commerce', '0001_initial'),
+        ('accounts', '0002_alter_company_options_alter_role_options_and_more'),
+        ('commerce', '0002_models'),
     ]
     
     operations = [

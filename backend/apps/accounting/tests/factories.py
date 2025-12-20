@@ -117,6 +117,12 @@ class InvoiceFactory(DjangoModelFactory):
     gst_amount = Decimal('9.00')
     total_amount = Decimal('109.00')
     amount_paid = Decimal('0.00')
+    
+    @factory.lazy_attribute
+    def customer(self):
+        """Create customer under same company."""
+        from apps.commerce.tests.factories import CustomerFactory
+        return CustomerFactory(company=self.company)
 
 
 class PaidInvoiceFactory(InvoiceFactory):

@@ -8,6 +8,9 @@ from apps.integrations.views import (
 )
 
 
+app_name = 'integrations'
+
+
 urlpatterns = [
     path('shipping/rates/<uuid:order_id>/', ShippingRatesView.as_view(), name='shipping-rates'),
     path('shipping/create/', CreateShipmentView.as_view(), name='create-shipment'),

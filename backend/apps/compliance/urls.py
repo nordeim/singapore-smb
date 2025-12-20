@@ -17,6 +17,8 @@ router.register('gst-returns', GSTReturnViewSet, basename='gst-returns')
 router.register('data-requests', DataAccessRequestViewSet, basename='data-requests')
 router.register('audit-logs', AuditLogViewSet, basename='audit-logs')
 
+app_name = 'compliance'
+
 urlpatterns = [
     path('', include(router.urls)),
     path('consent/', ConsentView.as_view(), name='consent'),

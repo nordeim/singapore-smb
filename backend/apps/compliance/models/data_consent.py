@@ -64,19 +64,22 @@ class DataConsentManager(models.Manager):
             )
             
             # Update customer's consent field
-            timestamp = timezone.now() if is_granted else None
+            # Note: Customer model uses single consent_timestamp for all consents
+            fields_to_update = ['updated_at']
+            
             if consent_type == 'marketing':
                 customer.consent_marketing = is_granted
-                customer.consent_marketing_at = timestamp
+                fields_to_update.append('consent_marketing')
             elif consent_type == 'analytics':
                 customer.consent_analytics = is_granted
-                customer.consent_analytics_at = timestamp
+                fields_to_update.append('consent_analytics')
             
-            customer.save(update_fields=[
-                'consent_marketing', 'consent_marketing_at',
-                'consent_analytics', 'consent_analytics_at',
-                'updated_at'
-            ])
+            # Update consent timestamp
+            if is_granted:
+                customer.consent_timestamp = timezone.now()
+                fields_to_update.append('consent_timestamp')
+            
+            customer.save(update_fields=fields_to_update)
             
             return consent
 

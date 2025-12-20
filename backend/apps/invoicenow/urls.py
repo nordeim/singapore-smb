@@ -13,6 +13,8 @@ from apps.invoicenow.views import (
 router = DefaultRouter()
 router.register('peppol-invoices', PEPPOLInvoiceViewSet, basename='peppol-invoices')
 
+app_name = 'invoicenow'
+
 urlpatterns = [
     path('', include(router.urls)),
     path('prepare/', PrepareInvoiceView.as_view(), name='prepare-invoice'),

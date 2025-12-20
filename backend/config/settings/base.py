@@ -367,3 +367,61 @@ GST_RATE_DECIMAL_PLACES = 4
 # Platform settings
 PLATFORM_NAME = 'Singapore SMB E-commerce Platform'
 PLATFORM_VERSION = '1.0.0'
+
+# =============================================================================
+# PHASE 5: COMPLIANCE SETTINGS
+# =============================================================================
+
+# Audit log retention (years) - PDPA and IRAS requirements
+AUDIT_LOG_RETENTION_YEARS = env('AUDIT_LOG_RETENTION_YEARS', default=7, cast=int)
+
+# Models to audit automatically via signals
+AUDIT_MODELS = [
+    'commerce.Order',
+    'commerce.Customer',
+    'accounting.Invoice',
+    'accounting.Payment',
+    'inventory.StockMovement',
+]
+
+# =============================================================================
+# PHASE 5: PAYMENT GATEWAY SETTINGS
+# =============================================================================
+
+# Gateway priority: Stripe primary, HitPay fallback
+PAYMENT_PRIMARY_GATEWAY = env('PAYMENT_PRIMARY_GATEWAY', default='stripe')
+PAYMENT_FALLBACK_GATEWAY = env('PAYMENT_FALLBACK_GATEWAY', default='hitpay')
+
+# Stripe configuration
+STRIPE_SECRET_KEY = env('STRIPE_SECRET_KEY', default='')
+STRIPE_PUBLISHABLE_KEY = env('STRIPE_PUBLISHABLE_KEY', default='')
+STRIPE_WEBHOOK_SECRET = env('STRIPE_WEBHOOK_SECRET', default='')
+
+# HitPay configuration (PayNow, GrabPay)
+HITPAY_API_KEY = env('HITPAY_API_KEY', default='')
+HITPAY_SALT = env('HITPAY_SALT', default='')
+HITPAY_SANDBOX = env('HITPAY_SANDBOX', default=True, cast=bool)
+
+# =============================================================================
+# PHASE 5: LOGISTICS SETTINGS
+# =============================================================================
+
+# NinjaVan
+NINJAVAN_API_KEY = env('NINJAVAN_API_KEY', default='')
+NINJAVAN_SANDBOX = env('NINJAVAN_SANDBOX', default=True, cast=bool)
+
+# SingPost
+SINGPOST_API_KEY = env('SINGPOST_API_KEY', default='')
+
+# =============================================================================
+# PHASE 5: INVOICENOW (PEPPOL) SETTINGS
+# =============================================================================
+
+# Zetta Solution Access Point (https://www.zetta-solution.com/peppol)
+PEPPOL_AP_URL = env('PEPPOL_AP_URL', default='https://zettapeppol.com/api/v1')
+PEPPOL_AP_KEY = env('PEPPOL_AP_KEY', default='')
+PEPPOL_SENDER_ID = env('PEPPOL_SENDER_ID', default='')
+
+# Digital signing certificates
+PEPPOL_CERT_PATH = env('PEPPOL_CERT_PATH', default='')
+PEPPOL_CERT_KEY_PATH = env('PEPPOL_CERT_KEY_PATH', default='')

@@ -11,6 +11,9 @@ from apps.payments.views import (
 from apps.payments.webhooks import StripeWebhookView, HitPayWebhookView
 
 
+app_name = 'payments'
+
+
 urlpatterns = [
     # API endpoints
     path('create-intent/', CreatePaymentIntentView.as_view(), name='create-intent'),

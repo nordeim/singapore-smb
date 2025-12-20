@@ -142,6 +142,8 @@ class PEPPOLService:
         """
         Submit signed invoice to Access Point.
         
+        Uses Zetta Solution InvoiceNow API.
+        
         Args:
             peppol_invoice: Signed PEPPOLInvoice
             
@@ -151,49 +153,35 @@ class PEPPOLService:
         if peppol_invoice.status != 'signed':
             raise ValueError("Invoice must be signed before submission")
         
-        # Get AP configuration
-        ap_url = getattr(settings, 'PEPPOL_AP_URL', '')
-        ap_key = getattr(settings, 'PEPPOL_AP_KEY', '')
+        # Import Zetta client
+        from apps.invoicenow.services.zetta_client import ZettaAccessPointClient
         
-        if not ap_url or not ap_key:
-            logger.warning("PEPPOL Access Point not configured")
-            raise ValueError("PEPPOL Access Point not configured")
+        # Create client (uses simulation if no API key configured)
+        client = ZettaAccessPointClient()
         
-        try:
-            import httpx
-            
-            response = httpx.post(
-                f'{ap_url}/documents',
-                headers={
-                    'Authorization': f'Bearer {ap_key}',
-                    'Content-Type': 'application/xml',
-                },
-                content=peppol_invoice.xml_document.encode('utf-8'),
-                timeout=60.0,
-            )
-            
-            if response.status_code not in [200, 201, 202]:
-                logger.error(f"AP submission failed: {response.text}")
-                raise Exception(f"AP error: {response.status_code}")
-            
-            result = response.json()
-            reference = result.get('reference', str(uuid.uuid4()))
-            
-            # Update status
-            peppol_invoice.mark_submitted(
-                provider=ap_url.split('/')[2],  # Extract domain
-                reference=reference,
-            )
-            
-            logger.info(
-                f"Submitted PEPPOL invoice {peppol_invoice.peppol_id} "
-                f"with reference {reference}"
-            )
-            
-            return peppol_invoice
-            
-        except ImportError:
-            raise ValueError("httpx package required for AP submission")
+        # Submit document
+        result = client.submit_document(
+            xml_content=peppol_invoice.xml_document,
+            document_id=peppol_invoice.peppol_id,
+            receiver_id=peppol_invoice.receiver_endpoint,
+        )
+        
+        if not result.success:
+            logger.error(f"AP submission failed: {result.error_message}")
+            raise ValueError(f"AP submission failed: {result.error_message}")
+        
+        # Update status with Zetta provider info
+        peppol_invoice.mark_submitted(
+            provider='zetta-solution',
+            reference=result.reference,
+        )
+        
+        logger.info(
+            f"Submitted PEPPOL invoice {peppol_invoice.peppol_id} "
+            f"to Zetta AP with reference {result.reference}"
+        )
+        
+        return peppol_invoice
     
     @staticmethod
     def process_full_workflow(invoice) -> PEPPOLInvoice:

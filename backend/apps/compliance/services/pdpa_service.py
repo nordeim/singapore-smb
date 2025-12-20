@@ -83,14 +83,15 @@ class PDPAService:
             Dict with consent type -> bool mapping and timestamps
         """
         # Get current state from Customer model fields
+        # Note: Customer model uses single consent_timestamp for all consents
         summary = {
             'marketing': {
                 'granted': customer.consent_marketing,
-                'timestamp': customer.consent_marketing_at,
+                'timestamp': customer.consent_timestamp,
             },
             'analytics': {
                 'granted': customer.consent_analytics,
-                'timestamp': customer.consent_analytics_at,
+                'timestamp': customer.consent_timestamp,
             },
         }
         
@@ -147,8 +148,8 @@ class PDPAService:
                 'name': address.recipient_name,
                 'line1': address.address_line1,
                 'line2': address.address_line2,
-                'city': address.city,
                 'postal_code': address.postal_code,
+                'unit_number': getattr(address, 'unit_number', ''),
                 'phone': address.phone,
             })
         
@@ -190,7 +191,6 @@ class PDPAService:
             customer.phone = ""
             customer.company_name = ""
             customer.company_uen = ""
-            customer.notes = ""
             
             # Mark consents as withdrawn
             customer.consent_marketing = False
