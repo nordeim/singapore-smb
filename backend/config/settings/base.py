@@ -65,8 +65,8 @@ LOCAL_APPS = [
     'apps.accounts',
     'apps.commerce',
     'apps.inventory',
+    'apps.accounting',
     # Future apps:
-    # 'apps.accounting',
     # 'apps.compliance',
     # 'apps.payments',
     # 'apps.integrations',

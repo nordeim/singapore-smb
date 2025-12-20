@@ -2,9 +2,9 @@
 
 > **Document Type**: AI Agent Reference Document  
 > **Created**: December 19, 2025  
-> **Last Updated**: December 19, 2025 (Phase 1 Remediation)  
+> **Last Updated**: December 20, 2025 (Phases 2 & 3 Complete)  
 > **Purpose**: Comprehensive validated understanding of WHAT, WHY, and HOW for AI coding agent task alignment  
-> **Validation Status**: ✅ Phase 1 Codebase Validated + Remediated (61 tests passing)
+> **Validation Status**: ✅ Phases 1-3 Codebase Validated (182 tests passing: 61 accounts + 64 commerce + 57 inventory)
 
 ---
 
@@ -55,13 +55,13 @@ The **Singapore SMB E-Commerce Platform** is a unified business management solut
 
 | Entity | Schema Table | Key Fields |
 |--------|--------------|------------|
-| [Company](file:///home/project/singapore-smb/backend/apps/accounts/models.py#41-162) | `core.companies` | `uen` (unique), [gst_registered](file:///home/project/singapore-smb/backend/apps/accounts/models.py#149-153), `gst_registration_number`, `settings` (JSONB) |
-| [User](file:///home/project/singapore-smb/backend/apps/accounts/models.py#199-346) | `core.users` | `email` (unique), `company_id`, `mfa_enabled`, `failed_login_attempts`, `locked_until` |
-| [Role](file:///home/project/singapore-smb/backend/apps/accounts/models.py#352-432) | `core.roles` | `company_id`, [name](file:///home/project/singapore-smb/backend/apps/accounts/models.py#314-319), [permissions](file:///home/project/singapore-smb/backend/apps/accounts/views.py#64-69) (JSONB), `is_system` |
+| `Company` | `core.companies` | `uen` (unique), `gst_registered`, `gst_registration_number`, `settings` (JSONB) |
+| `User` | `core.users` | `email` (unique), `company_id`, `mfa_enabled`, `failed_login_attempts`, `locked_until` |
+| `Role` | `core.roles` | `company_id`, `name`, `permissions` (JSONB), `is_system` |
 | `Product` | `commerce.products` | `sku`, `base_price`, `cost_price`, `gst_code`, `gst_rate`, `search_vector` (tsvector) |
-| [Order](file:///home/project/singapore-smb/backend/core/exceptions.py#68-76) | `commerce.orders` (partitioned) | `order_number`, `status`, `payment_status`, `fulfillment_status`, GST box amounts |
-| `InventoryItem` | `inventory.items` | `available_qty`, `reserved_qty`, `net_qty` (computed stored), [version](file:///home/project/singapore-smb/backend/.python-version) (optimistic lock) |
-| [Account](file:///home/project/singapore-smb/backend/core/exceptions.py#117-121) | `accounting.accounts` | `code`, `account_type`, `current_balance` |
+| `Order` | `commerce.orders` (partitioned) | `order_number`, `status`, `payment_status`, `fulfillment_status`, GST box amounts |
+| `InventoryItem` | `inventory.items` | `available_qty`, `reserved_qty`, `net_qty` (computed stored), `version` (optimistic lock) |
+| `Account` | `accounting.accounts` | `code`, `account_type`, `current_balance` |
 | `JournalEntry` | `accounting.journal_entries` | `total_debit`, `total_credit` with `balanced_entry` constraint |
 | `GSTReturn` | `compliance.gst_returns` | Boxes 1-8 for F5 filing, `status`, `iras_reference` |
 
@@ -118,13 +118,13 @@ The **Singapore SMB E-Commerce Platform** is a unified business management solut
 
 | Layer | Technology | Version | Status |
 |-------|------------|---------|--------|
-| **Backend Framework** | Django | 6.0+ | ✅ Configured in [pyproject.toml](file:///home/project/singapore-smb/backend/pyproject.toml) |
-| **API Layer** | Django REST Framework | 3.16+ | ✅ Configured in [base.py](file:///home/project/singapore-smb/backend/config/settings/base.py) |
+| **Backend Framework** | Django | 6.0+ | ✅ Configured in `pyproject.toml` |
+| **API Layer** | Django REST Framework | 3.16+ | ✅ Configured in `base.py` |
 | **Authentication** | django-allauth + SimpleJWT | Latest | ✅ Configured, token blacklist enabled |
-| **Database** | PostgreSQL | 16+ | ✅ Schema defined in [database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) |
+| **Database** | PostgreSQL | 16+ | ✅ Schema defined in `database/schema.sql` |
 | **Cache/Queue** | Redis | 7.4+ | ✅ Celery broker configured |
 | **Frontend** | Next.js | 14.2+ | ✅ Scaffold in `frontend/` |
-| **Python** | Python | 3.12+ | ✅ [.python-version](file:///home/project/singapore-smb/backend/.python-version) confirmed |
+| **Python** | Python | 3.12+ | ✅ `.python-version` confirmed |
 
 ### 3.2 Project Structure (Implemented)
 
@@ -148,14 +148,33 @@ backend/
 │   └── middleware.py                 # ✅ TenantMiddleware, AuditMiddleware, SecurityHeadersMiddleware
 │
 ├── apps/
-│   └── accounts/                     # ✅ Authentication, Users, RBAC
-│       ├── models.py                 # ✅ Company, User, Role, UserRole
-│       ├── serializers.py            # ✅ UserSerializer, CompanySerializer, LoginSerializer
-│       ├── views.py                  # ✅ CompanyViewSet, UserViewSet, RoleViewSet, LoginView, LogoutView
-│       ├── services.py               # ✅ AuthService, UserService, CompanyService
-│       ├── admin.py                  # ✅ CompanyAdmin, UserAdmin, RoleAdmin
-│       ├── urls.py                   # ✅ Router registration
-│       └── tests/                    # ✅ Test package
+│   ├── accounts/                     # ✅ Authentication, Users, RBAC
+│   │   ├── models.py                 # ✅ Company, User, Role, UserRole
+│   │   ├── serializers.py            # ✅ UserSerializer, CompanySerializer, LoginSerializer
+│   │   ├── views.py                  # ✅ CompanyViewSet, UserViewSet, RoleViewSet, LoginView, LogoutView
+│   │   ├── services.py               # ✅ AuthService, UserService, CompanyService
+│   │   ├── admin.py                  # ✅ CompanyAdmin, UserAdmin, RoleAdmin
+│   │   ├── urls.py                   # ✅ Router registration
+│   │   └── tests/                    # ✅ 61 tests
+│   │
+│   ├── commerce/                     # ✅ Product catalog, Orders, Customers
+│   │   ├── models/                   # ✅ Category, Product, ProductVariant, Customer, Cart, Order
+│   │   ├── serializers.py            # ✅ 14 serializers with GST validation
+│   │   ├── services/                 # ✅ ProductService, CartService, OrderService
+│   │   ├── views.py                  # ✅ 5 ViewSets with status transitions
+│   │   ├── admin.py                  # ✅ Full admin with inlines
+│   │   ├── tasks.py                  # ✅ Order confirmation, cart cleanup
+│   │   └── tests/                    # ✅ 64 tests
+│   │
+│   └── inventory/                    # ✅ Stock tracking, Reservations, Movements
+│       ├── models/                   # ✅ Location, InventoryItem, Reservation, Movement
+│       ├── locks.py                  # ✅ Redis distributed locking (15s timeout)
+│       ├── serializers.py            # ✅ 10 serializers with action serializers
+│       ├── services/                 # ✅ InventoryService (reserve, release, transfer)
+│       ├── views.py                  # ✅ 4 ViewSets with adjust/transfer/receive actions
+│       ├── admin.py                  # ✅ Color-coded low stock indicators
+│       ├── tasks.py                  # ✅ Reservation cleanup, low stock alerts
+│       └── tests/                    # ✅ 57 tests
 │
 └── manage.py                         # ✅ Django CLI
 ```
@@ -181,21 +200,21 @@ BaseModel              # UUID pk, created_at, updated_at
 | `sales` | Orders, customers | `is_system=True` |
 
 **Permission Classes Implemented**:
-- [IsCompanyMember](file:///home/project/singapore-smb/backend/core/permissions.py#12-54) - Multi-tenant isolation
-- [HasRole](file:///home/project/singapore-smb/backend/core/permissions.py#56-84) / [HasAnyRole](file:///home/project/singapore-smb/backend/core/permissions.py#86-107) - Role-based access
-- [IsOwnerOrAdmin](file:///home/project/singapore-smb/backend/core/permissions.py#109-143) - Object-level permission
-- [IsAdminUser](file:///home/project/singapore-smb/backend/core/permissions.py#145-166) - Admin-only actions
-- [IsFinanceUser](file:///home/project/singapore-smb/backend/core/permissions.py#168-191) - Finance-sensitive operations
+- `IsCompanyMember` - Multi-tenant isolation
+- `HasRole` / `HasAnyRole` - Role-based access
+- `IsOwnerOrAdmin` - Object-level permission
+- `IsAdminUser` - Admin-only actions
+- `IsFinanceUser` - Finance-sensitive operations
 
 ### 3.5 Middleware Stack (Validated)
 
 | Middleware | Purpose |
 |------------|---------|
-| [TenantMiddleware](file:///home/project/singapore-smb/backend/core/middleware.py#33-72) | Extract company from JWT/user, set thread-local context |
-| [AuditMiddleware](file:///home/project/singapore-smb/backend/core/middleware.py#74-94) | Store current user for `created_by`/`updated_by` |
-| [SecurityHeadersMiddleware](file:///home/project/singapore-smb/backend/core/middleware.py#96-129) | X-Frame-Options, X-XSS-Protection, CSP |
-| [RequestLoggingMiddleware](file:///home/project/singapore-smb/backend/core/middleware.py#131-174) | API request logging with duration |
-| [MaintenanceModeMiddleware](file:///home/project/singapore-smb/backend/core/middleware.py#190-223) | 503 response when maintenance enabled |
+| `TenantMiddleware` | Extract company from JWT/user, set thread-local context |
+| `AuditMiddleware` | Store current user for `created_by`/`updated_by` |
+| `SecurityHeadersMiddleware` | X-Frame-Options, X-XSS-Protection, CSP |
+| `RequestLoggingMiddleware` | API request logging with duration |
+| `MaintenanceModeMiddleware` | 503 response when maintenance enabled |
 
 ### 3.6 GST Engine Design
 
@@ -229,9 +248,9 @@ OS = 'Out of Scope'         # Overseas services
 
 | Phase | Focus | Duration | Status |
 |-------|-------|----------|--------|
-| **Phase 1** | Foundation | Weeks 1-3 | ✅ **COMPLETE** |
-| Phase 2 | Commerce Domain | Weeks 4-6 | 🔲 Not started |
-| Phase 3 | Inventory Domain | Weeks 7-9 | 🔲 Not started |
+| **Phase 1** | Foundation | Weeks 1-3 | ✅ **COMPLETE** (61 tests) |
+| **Phase 2** | Commerce Domain | Weeks 4-6 | ✅ **COMPLETE** (64 tests) |
+| **Phase 3** | Inventory Domain | Weeks 7-9 | ✅ **COMPLETE** (57 tests) |
 | Phase 4 | Accounting Domain | Weeks 10-12 | 🔲 Not started |
 | Phase 5 | Compliance & Integrations | Weeks 13-15 | 🔲 Not started |
 | Phase 6 | Frontend Foundation | Weeks 16-18 | 🔲 Not started |
@@ -242,23 +261,23 @@ OS = 'Out of Scope'         # Overseas services
 
 | Component | Files | Status |
 |-----------|-------|--------|
-| Django project structure | `config/`, [manage.py](file:///home/project/singapore-smb/backend/manage.py) | ✅ |
+| Django project structure | `config/`, `manage.py` | ✅ |
 | Settings (base, dev, prod) | `config/settings/*.py` | ✅ |
-| Celery configuration | [config/celery.py](file:///home/project/singapore-smb/backend/config/celery.py) | ✅ |
-| Core models | [core/models.py](file:///home/project/singapore-smb/backend/core/models.py) | ✅ |
-| Custom exceptions | [core/exceptions.py](file:///home/project/singapore-smb/backend/core/exceptions.py) | ✅ |
-| Custom permissions | [core/permissions.py](file:///home/project/singapore-smb/backend/core/permissions.py) | ✅ |
-| Custom middleware | [core/middleware.py](file:///home/project/singapore-smb/backend/core/middleware.py) | ✅ |
-| Accounts app models | [apps/accounts/models.py](file:///home/project/singapore-smb/backend/apps/accounts/models.py) | ✅ |
-| Accounts app serializers | [apps/accounts/serializers.py](file:///home/project/singapore-smb/backend/apps/accounts/serializers.py) | ✅ |
-| Accounts app views | [apps/accounts/views.py](file:///home/project/singapore-smb/backend/apps/accounts/views.py) | ✅ |
-| Accounts app services | [apps/accounts/services.py](file:///home/project/singapore-smb/backend/apps/accounts/services.py) | ✅ |
-| Accounts app admin | [apps/accounts/admin.py](file:///home/project/singapore-smb/backend/apps/accounts/admin.py) | ✅ |
-| Accounts app URLs | [apps/accounts/urls.py](file:///home/project/singapore-smb/backend/apps/accounts/urls.py) | ✅ |
+| Celery configuration | `config/celery.py` | ✅ |
+| Core models | `core/models.py` | ✅ |
+| Custom exceptions | `core/exceptions.py` | ✅ |
+| Custom permissions | `core/permissions.py` | ✅ |
+| Custom middleware | `core/middleware.py` | ✅ |
+| Accounts app models | `apps/accounts/models.py` | ✅ |
+| Accounts app serializers | `apps/accounts/serializers.py` | ✅ |
+| Accounts app views | `apps/accounts/views.py` | ✅ |
+| Accounts app services | `apps/accounts/services.py` | ✅ |
+| Accounts app admin | `apps/accounts/admin.py` | ✅ |
+| Accounts app URLs | `apps/accounts/urls.py` | ✅ |
 | Accounts app tests | `apps/accounts/tests/` | ✅ |
-| Environment files | [.env.example](file:///home/project/singapore-smb/backend/.env.example) | ✅ |
-| Seed management command | [apps/accounts/management/commands/seed.py](file:///home/project/singapore-smb/backend/apps/accounts/management/commands/seed.py) | ✅ |
-| Docker Compose | [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml) | ✅ |
+| Environment files | `.env.example` | ✅ |
+| Seed management command | `apps/accounts/management/commands/seed.py` | ✅ |
+| Docker Compose | `docker-compose.yml` | ✅ |
 | Migration/seed scripts | `docker/scripts/*.sh` | ✅ |
 
 ### 4.3 Phase 1 Remediation Summary (Validated)
@@ -270,26 +289,75 @@ Phase 1 underwent remediation to align with latest design specs and ensure end-t
 
 | Category | Change | Files Modified |
 |----------|--------|----------------|
-| **Docker Dev Environment** | Added [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml) with `postgres:16-alpine` and `redis:7.4-alpine`, healthchecks, named volumes | [docker-compose.yml](file:///home/project/singapore-smb/docker-compose.yml), `.env.docker` |
-| **Seed Command** | Added `manage.py seed` for idempotent baseline data (company, roles, owner) | [apps/accounts/management/commands/seed.py](file:///home/project/singapore-smb/backend/apps/accounts/management/commands/seed.py) |
-| **Admin Inline Fix** | Added `fk_name = 'user'` to `UserRoleInline` to resolve `admin.E202` (multiple FKs to User) | [apps/accounts/admin.py](file:///home/project/singapore-smb/backend/apps/accounts/admin.py) |
-| **Django Permission Hooks** | Added [has_perm()](file:///home/project/singapore-smb/backend/apps/accounts/models.py#308-310) and [has_module_perms()](file:///home/project/singapore-smb/backend/apps/accounts/models.py#311-313) to custom User model for admin compatibility | [apps/accounts/models.py](file:///home/project/singapore-smb/backend/apps/accounts/models.py) |
-| **Celery Beat Conditional** | Disabled beat schedule by default; enabled only when `ENABLE_CELERY_BEAT=1` (Phase 1 lacks task modules) | [config/celery.py](file:///home/project/singapore-smb/backend/config/celery.py) |
-| **django-allauth Modernization** | Replaced deprecated settings with `ACCOUNT_LOGIN_METHODS`, `ACCOUNT_SIGNUP_FIELDS` | [config/settings/base.py](file:///home/project/singapore-smb/backend/config/settings/base.py) |
-| **GST Rate Configurability** | Added `GST_DEFAULT_RATE` env var; removed hardcoded [(9%)](file:///home/project/singapore-smb/backend/apps/accounts/views.py#127-132) from GST code labels | [config/settings/base.py](file:///home/project/singapore-smb/backend/config/settings/base.py) |
-| **Factory Phone Fixes** | Fixed factories generating phone strings > 20 chars (Postgres `VARCHAR(20)` enforcement) | [apps/accounts/tests/factories.py](file:///home/project/singapore-smb/backend/apps/accounts/tests/factories.py) |
-| **Schema Alignment** | Aligned [database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) with Django migrations: UUID PKs for `user_roles`, unique constraints, email `VARCHAR(254)` | [database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) |
-| **Documentation** | Updated [backend/README.md](file:///home/project/singapore-smb/backend/README.md) with correct workflow and versions | [backend/README.md](file:///home/project/singapore-smb/backend/README.md) |
+| **Docker Dev Environment** | Added `docker-compose.yml` with `postgres:16-alpine` and `redis:7.4-alpine`, healthchecks, named volumes | `docker-compose.yml`, `.env.docker` |
+| **Seed Command** | Added `manage.py seed` for idempotent baseline data (company, roles, owner) | `apps/accounts/management/commands/seed.py` |
+| **Admin Inline Fix** | Added `fk_name = 'user'` to `UserRoleInline` to resolve `admin.E202` (multiple FKs to User) | `apps/accounts/admin.py` |
+| **Django Permission Hooks** | Added `has_perm()` and `has_module_perms()` to custom User model for admin compatibility | `apps/accounts/models.py` |
+| **Celery Beat Conditional** | Disabled beat schedule by default; enabled only when `ENABLE_CELERY_BEAT=1` (Phase 1 lacks task modules) | `config/celery.py` |
+| **django-allauth Modernization** | Replaced deprecated settings with `ACCOUNT_LOGIN_METHODS`, `ACCOUNT_SIGNUP_FIELDS` | `config/settings/base.py` |
+| **GST Rate Configurability** | Added `GST_DEFAULT_RATE` env var; removed hardcoded `(9%)` from GST code labels | `config/settings/base.py` |
+| **Factory Phone Fixes** | Fixed factories generating phone strings > 20 chars (Postgres `VARCHAR(20)` enforcement) | `apps/accounts/tests/factories.py` |
+| **Schema Alignment** | Aligned `database/schema.sql` with Django migrations: UUID PKs for `user_roles`, unique constraints, email `VARCHAR(254)` | `database/schema.sql` |
+| **Documentation** | Updated `backend/README.md` with correct workflow and versions | `backend/README.md` |
 
 #### Key Remediation Highlights
 
-1. **Django Admin Fix**: [UserRole](file:///home/project/singapore-smb/backend/apps/accounts/tests/factories.py#108-117) has two FKs to [User](file:///home/project/singapore-smb/backend/apps/accounts/models.py#199-346) ([user](file:///home/project/singapore-smb/backend/apps/accounts/views.py#70-77) and `assigned_by`), requiring explicit `fk_name` specification in admin inlines.
+1. **Django Admin Fix**: `UserRole` has two FKs to `User` (`user` and `assigned_by`), requiring explicit `fk_name` specification in admin inlines.
 
 2. **Celery Beat Protection**: Phase 1 doesn't include `apps.inventory`, `apps.commerce`, etc., so beat schedule tasks would fail. Conditional activation prevents runtime errors.
 
 3. **GST Rate Decoupling**: GST rate is now environment-configurable (`GST_DEFAULT_RATE`) rather than hardcoded, supporting rate changes without code changes.
 
-4. **Schema-Migration Alignment**: Critical fix to `core.user_roles` — changed from composite PK [(user_id, role_id)](file:///home/project/singapore-smb/backend/apps/accounts/views.py#127-132) to UUID PK with unique constraint, matching Django migration reality.
+4. **Schema-Migration Alignment**: Critical fix to `core.user_roles` — changed from composite PK `(user_id, role_id)` to UUID PK with unique constraint, matching Django migration reality.
+
+### 4.4 Phase 2 Completion Summary (Commerce Domain)
+
+> **Verification**: All 64 tests passing, `manage.py check` clean
+
+| Component | Files | Status |
+|-----------|-------|--------|
+| Category model | `apps/commerce/models/category.py` | ✅ |
+| Product/Variant models | `apps/commerce/models/product.py` | ✅ |
+| Customer/Address models | `apps/commerce/models/customer.py` | ✅ |
+| Cart/CartItem models | `apps/commerce/models/cart.py` | ✅ |
+| Order/OrderItem models | `apps/commerce/models/order.py` | ✅ |
+| Commerce serializers | `apps/commerce/serializers.py` | ✅ |
+| Commerce services | `apps/commerce/services/` | ✅ |
+| Commerce views | `apps/commerce/views.py` | ✅ |
+| Commerce admin | `apps/commerce/admin.py` | ✅ |
+| Commerce tasks | `apps/commerce/tasks.py` | ✅ |
+| Commerce tests | `apps/commerce/tests/` | ✅ |
+
+**Key Features**:
+- GST codes (SR/ZR/ES/OS) with configurable rate
+- Order status state machine (pending → confirmed → processing → shipped → delivered)
+- F5 reporting fields (gst_box_1_amount, gst_box_6_amount)
+- PDPA consent fields on Customer
+
+### 4.5 Phase 3 Completion Summary (Inventory Domain)
+
+> **Verification**: All 57 tests passing, `manage.py check` clean
+
+| Component | Files | Status |
+|-----------|-------|--------|
+| Location model | `apps/inventory/models/location.py` | ✅ |
+| InventoryItem model | `apps/inventory/models/item.py` | ✅ |
+| Reservation model | `apps/inventory/models/reservation.py` | ✅ |
+| Movement model | `apps/inventory/models/movement.py` | ✅ |
+| Redis locks | `apps/inventory/locks.py` | ✅ |
+| InventoryService | `apps/inventory/services/inventory_service.py` | ✅ |
+| Inventory serializers | `apps/inventory/serializers.py` | ✅ |
+| Inventory views | `apps/inventory/views.py` | ✅ |
+| Inventory admin | `apps/inventory/admin.py` | ✅ |
+| Inventory tasks | `apps/inventory/tasks.py` | ✅ |
+| Inventory tests | `apps/inventory/tests/` | ✅ |
+
+**Key Features**:
+- Redis distributed locking (15-second timeout)
+- Optimistic locking via `version` field
+- Configurable reservation expiry (30 minutes default)
+- Immutable movement audit trail
+- Low stock detection with reorder points
 
 ---
 
@@ -437,14 +505,14 @@ compliance  -- GST returns, consents, audit logs, PEPPOL
 
 | Document | Purpose | Location |
 |----------|---------|----------|
-| AGENT.md | Quick start for AI agents | [/home/project/singapore-smb/AGENT.md](file:///home/project/singapore-smb/AGENT.md) |
-| Project Architecture Document | Technical architecture | [/home/project/singapore-smb/Project Architecture Document.md](file:///home/project/singapore-smb/Project%20Architecture%20Document.md) |
-| PROJECT_UNDERSTANDING.md | Business context | [/home/project/singapore-smb/PROJECT_UNDERSTANDING.md](file:///home/project/singapore-smb/PROJECT_UNDERSTANDING.md) |
-| PROJECT_DEEP_UNDERSTANDING.md | Technical deep-dive | [/home/project/singapore-smb/PROJECT_DEEP_UNDERSTANDING.md](file:///home/project/singapore-smb/PROJECT_DEEP_UNDERSTANDING.md) |
-| master_execution_plan.md | Implementation phases | [/home/project/singapore-smb/master_execution_plan.md](file:///home/project/singapore-smb/master_execution_plan.md) |
-| database/schema.sql | Complete PostgreSQL schema | [/home/project/singapore-smb/database/schema.sql](file:///home/project/singapore-smb/database/schema.sql) |
-| Phase1_sub-plan.md | Phase 1 walkthrough | [/home/project/singapore-smb/Phase1_sub-plan.md](file:///home/project/singapore-smb/Phase1_sub-plan.md) |
-| Phase1_remediation_plan_audit_log.md | Phase 1 fixes audit log | [/home/project/singapore-smb/Phase1_remediation_plan_audit_log.md](file:///home/project/singapore-smb/Phase1_remediation_plan_audit_log.md) |
+| AGENT.md | Quick start for AI agents | `/home/project/singapore-smb/AGENT.md` |
+| Project Architecture Document | Technical architecture | `/home/project/singapore-smb/Project Architecture Document.md` |
+| PROJECT_UNDERSTANDING.md | Business context | `/home/project/singapore-smb/PROJECT_UNDERSTANDING.md` |
+| PROJECT_DEEP_UNDERSTANDING.md | Technical deep-dive | `/home/project/singapore-smb/PROJECT_DEEP_UNDERSTANDING.md` |
+| master_execution_plan.md | Implementation phases | `/home/project/singapore-smb/master_execution_plan.md` |
+| database/schema.sql | Complete PostgreSQL schema | `/home/project/singapore-smb/database/schema.sql` |
+| Phase1_sub-plan.md | Phase 1 walkthrough | `/home/project/singapore-smb/Phase1_sub-plan.md` |
+| Phase1_remediation_plan_audit_log.md | Phase 1 fixes audit log | `/home/project/singapore-smb/Phase1_remediation_plan_audit_log.md` |
 
 ---
 
@@ -465,6 +533,6 @@ Before any commit:
 
 ---
 
-**Document saved to**: [/home/pete/.gemini/antigravity/brain/c68464d0-90e3-4d82-b89e-60dfdae6a4d3/VALIDATED_PROJECT_UNDERSTANDING.md](file:///home/pete/.gemini/antigravity/brain/c68464d0-90e3-4d82-b89e-60dfdae6a4d3/VALIDATED_PROJECT_UNDERSTANDING.md)
+**Document saved to**: `/home/pete/.gemini/antigravity/brain/c68464d0-90e3-4d82-b89e-60dfdae6a4d3/VALIDATED_PROJECT_UNDERSTANDING.md`
 
 This document serves as the authoritative reference for AI coding agent alignment with the Singapore SMB E-Commerce Platform project.

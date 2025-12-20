@@ -1,8 +1,8 @@
 # AGENT.md - AI Coding Agent Briefing Document
 
 > **Project**: Singapore SMB E-Commerce & Integrated Business Platform
-> **Version**: 1.0
-> **Last Updated**: December 18, 2025
+> **Version**: 1.3
+> **Last Updated**: December 20, 2025
 
 ---
 
@@ -278,37 +278,46 @@ CREATE INDEX idx_products_search ON products USING GIN(to_tsvector('english', na
 
 ## 🚀 Implementation Phases
 
-### Current Phase: Pre-Implementation (Foundation Planning)
+### Current Phase: Phase 4 (Accounting Domain)
 
-### Phase 1 (Weeks 1-6): Foundation
-- [ ] Django project setup with Docker
-- [ ] Core models (Company, Product, Customer, Order)
-- [ ] Authentication (django-allauth + JWT)
-- [ ] Admin panel customization
-- [ ] CI/CD pipeline
+### Phase 1 (Weeks 1-3): Foundation ✅ COMPLETE
+- [x] Django project setup with Docker
+- [x] Core models (Company, User, Role, RBAC)
+- [x] Authentication (django-allauth + JWT)
+- [x] Admin panel customization
+- [x] 61 tests passing
 
-### Phase 2 (Weeks 7-10): Compliance Core
-- [ ] GST Engine implementation
-- [ ] F5 return preparation
+### Phase 2 (Weeks 4-6): Commerce Domain ✅ COMPLETE
+- [x] Category, Product, ProductVariant models
+- [x] Customer with PDPA consent fields
+- [x] Cart with guest support, expiry
+- [x] Order with status state machine, GST reporting
+- [x] 64 tests passing
+
+### Phase 3 (Weeks 7-9): Inventory Domain ✅ COMPLETE
+- [x] Location (warehouse/store/virtual)
+- [x] InventoryItem with optimistic locking
+- [x] Reservation with 30-min configurable expiry
+- [x] Movement audit trail (immutable)
+- [x] Redis distributed locking (15s timeout)
+- [x] 57 tests passing
+
+### Phase 4 (Weeks 10-12): Accounting Domain 🔲 In Progress
+- [ ] Chart of Accounts (hierarchical)
+- [ ] Journal Entries with balanced constraint
+- [ ] Invoices and Payments
+- [ ] GST Engine with F5 returns
+
+### Phase 5 (Weeks 13-15): Compliance & Integrations
 - [ ] PDPA consent framework
-- [ ] Audit trail system
+- [ ] PEPPOL/InvoiceNow
+- [ ] Payment gateway integration (Stripe, HitPay)
+- [ ] Logistics API (Ninja Van, SingPost)
 
-### Phase 3 (Weeks 11-16): E-Commerce Backend
-- [ ] Order management with state machine
-- [ ] Inventory reservation system
-- [ ] Payment gateway integration
-- [ ] Logistics API integration
-
-### Phase 4 (Weeks 17-22): Frontend
+### Phase 6-8 (Weeks 16-28): Frontend & Launch
 - [ ] Next.js storefront
 - [ ] Checkout flow with PayNow
 - [ ] PWA implementation
-- [ ] Mobile optimization
-
-### Phase 5 (Weeks 23-28): Launch
-- [ ] Marketplace integrations
-- [ ] Security audit
-- [ ] Performance testing
 - [ ] Production deployment
 
 ---
