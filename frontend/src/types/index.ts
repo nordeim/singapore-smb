@@ -259,3 +259,50 @@ export interface OrderFilters {
     page?: number;
     pageSize?: number;
 }
+
+// ============================================================================
+// Payment Types
+// ============================================================================
+
+export interface PaymentIntent {
+    id: string;
+    clientSecret: string;
+    amount: number;
+    currency: string;
+    status: 'requires_payment_method' | 'requires_confirmation' | 'requires_action' | 'processing' | 'succeeded' | 'canceled';
+}
+
+export interface PaymentMethod {
+    id: string;
+    type: 'card' | 'paynow';
+    card?: {
+        brand: string;
+        last4: string;
+        expMonth: number;
+        expYear: number;
+    };
+}
+
+export interface CheckoutRequest {
+    cartId: string;
+    shippingAddress: Address;
+    billingAddress?: Address;
+    paymentMethod: string;
+    shippingMethod?: string;
+    customerNotes?: string;
+}
+
+// ============================================================================
+// Address Form Types
+// ============================================================================
+
+export interface AddressFormData {
+    recipientName: string;
+    phone: string;
+    addressLine1: string;
+    addressLine2?: string;
+    postalCode: string;
+    unitNumber?: string;
+    saveAsDefault?: boolean;
+}
+

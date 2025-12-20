@@ -250,3 +250,51 @@ export const AuthApi = {
         return response.data;
     },
 };
+
+// ============================================================================
+// Payments API
+// ============================================================================
+
+import type { PaymentIntent, PaymentMethod, CheckoutRequest } from '@/types';
+
+export const PaymentsApi = {
+    /**
+     * Create a Stripe payment intent for an order
+     */
+    createIntent: async (orderId: string): Promise<PaymentIntent> => {
+        const response = await apiClient.post<PaymentIntent>('/payments/create-intent/', {
+            order_id: orderId,
+        });
+        return response.data;
+    },
+
+    /**
+     * Get payment status for an order
+     */
+    getStatus: async (orderId: string): Promise<{ status: string; paymentMethod?: string }> => {
+        const response = await apiClient.get<{ status: string; paymentMethod?: string }>(
+            `/payments/status/${orderId}/`
+        );
+        return response.data;
+    },
+
+    /**
+     * Get available payment methods
+     */
+    getMethods: async (): Promise<PaymentMethod[]> => {
+        const response = await apiClient.get<PaymentMethod[]>('/payments/methods/');
+        return response.data;
+    },
+
+    /**
+     * Generate PayNow QR code data
+     */
+    generatePayNowQR: async (orderId: string): Promise<{ qrData: string; reference: string; expiresAt: string }> => {
+        const response = await apiClient.post<{ qrData: string; reference: string; expiresAt: string }>(
+            '/payments/paynow/generate/',
+            { order_id: orderId }
+        );
+        return response.data;
+    },
+};
+
