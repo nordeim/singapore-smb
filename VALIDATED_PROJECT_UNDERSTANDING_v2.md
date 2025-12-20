@@ -3,7 +3,7 @@
 
 > **Reference Document for AI Agent Task Alignment**  
 > **Created**: December 20, 2025  
-> **Validated Against**: Codebase Phases 1-4 (273 tests passing)  
+> **Validated Against**: Codebase Phases 1-5 (370 tests passing)  
 > **Location**: `/home/pete/.gemini/antigravity/brain/c7136b15-4639-49e0-8a4d-e8f1505f3976/COMPREHENSIVE_PROJECT_UNDERSTANDING.md`
 
 ---
@@ -28,7 +28,7 @@ The **Singapore SMB E-Commerce Platform** is a **modular monolith** designed to 
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│                      BOUNDED CONTEXTS (4 Complete)                     │
+│                      BOUNDED CONTEXTS (6 Complete)                     │
 ├────────────────┬────────────────┬────────────────┬────────────────────┤
 │   ACCOUNTS     │   COMMERCE     │   INVENTORY    │   ACCOUNTING       │
 │   (Identity)   │   (Sales)      │   (Stock)      │   (Finance)        │
@@ -40,14 +40,14 @@ The **Singapore SMB E-Commerce Platform** is a **modular monolith** designed to 
 │               │ • Customers    │ • Movements    │ • Payments         │
 │               │ • Carts        │ (Redis locks)  │ • GST Engine       │
 │               │ • Orders       │               │ • F5 Returns       │
-├───────────────┴────────────────┴────────────────┴────────────────────┤
-│   COMPLIANCE (Phase 5 - Not Started)     │   INTEGRATIONS (Phase 5)  │
-├──────────────────────────────────────────┼───────────────────────────┤
-│ • GST Returns (F5)                        │ • Stripe / HitPay         │
-│ • PDPA Consents + Data Access Requests    │ • Ninja Van / SingPost    │
-│ • Audit Logs                              │ • Shopee / Lazada / Qoo10 │
-│ • PEPPOL/InvoiceNow                       │                           │
-└──────────────────────────────────────────┴───────────────────────────┘
+├────────────────┴────────────────┴────────────────┴────────────────────┤
+│   COMPLIANCE (38 tests ✅)               │   INTEGRATIONS (8 tests ✅) │
+├──────────────────────────────────────────┼────────────────────────────┤
+│ • GST Returns (F5)                        │ • Stripe / HitPay          │
+│ • PDPA Consents + Data Access Requests    │ • NinjaVan / SingPost      │
+│ • Audit Logs (7-year retention)           │                            │
+│ • InvoiceNow (Zetta PEPPOL AP)            │                            │
+└──────────────────────────────────────────┴────────────────────────────┘
 ```
 
 ### 1.2 Core Entities by Domain
@@ -203,12 +203,12 @@ BaseModel              # UUID pk, created_at, updated_at
 | **Phase 2** | Commerce Domain | Weeks 4-6 | ✅ **COMPLETE** | 64 |
 | **Phase 3** | Inventory Domain | Weeks 7-9 | ✅ **COMPLETE** | 57 |
 | **Phase 4** | Accounting Domain | Weeks 10-12 | ✅ **COMPLETE** | 91 |
-| Phase 5 | Compliance & Integrations | Weeks 13-15 | 🔲 Not started | - |
+| **Phase 5** | Compliance & Integrations | Weeks 13-15 | ✅ **COMPLETE** | 97 |
 | Phase 6 | Frontend Foundation | Weeks 16-18 | 🔲 Not started | - |
 | Phase 7 | Frontend Features | Weeks 19-22 | 🔲 Not started | - |
 | Phase 8 | Testing & Deployment | Weeks 23-28 | 🔲 Not started | - |
 
-**Total Tests Passing**: 273
+**Total Tests Passing**: 370
 
 ### 4.2 Phase 1-4 Key Deliverables
 
@@ -240,6 +240,12 @@ BaseModel              # UUID pk, created_at, updated_at
 - Historical GST rates (1994-2024)
 - F5 return preparation and validation
 - Invoice lifecycle with PEPPOL fields
+
+#### Phase 5: Compliance & Integrations
+- **Compliance App**: GST F5 returns, PDPA consent (6 consent types), audit logging (7-year retention)
+- **Payments App**: Stripe (primary) + HitPay (fallback) gateway abstraction with webhook handling
+- **Integrations App**: NinjaVan + SingPost logistics multi-carrier rate comparison
+- **InvoiceNow App**: PEPPOL BIS 3.0 UBL generation, Zetta Solution AP integration with simulation mode
 
 ---
 
@@ -393,14 +399,7 @@ compliance  -- GST returns, consents, audit logs (Phase 5)
 
 ---
 
-## 8. Upcoming Phases (5-8)
-
-### Phase 5: Compliance & Integrations (Weeks 13-15)
-- PDPA consent framework (`compliance.data_consents`)
-- Data access/deletion request handling
-- PEPPOL/InvoiceNow submission via Access Points
-- Payment gateway integration (Stripe, HitPay)
-- Logistics API (Ninja Van, SingPost)
+## 8. Upcoming Phases (6-8)
 
 ### Phase 6: Frontend Foundation (Weeks 16-18)
 - Next.js 14.2 App Router setup
@@ -488,4 +487,4 @@ Before any commit:
 ---
 
 **Document validated against codebase on December 20, 2025**  
-**Total tests passing: 273 (61 + 64 + 57 + 91)**
+**Total tests passing: 370 (61 + 64 + 57 + 91 + 97)**

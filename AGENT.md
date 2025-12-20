@@ -278,7 +278,7 @@ CREATE INDEX idx_products_search ON products USING GIN(to_tsvector('english', na
 
 ## 🚀 Implementation Phases
 
-### Current Phase: Phase 4 (Accounting Domain)
+### Current Phase: Phase 6 (Frontend Foundation)
 
 ### Phase 1 (Weeks 1-3): Foundation ✅ COMPLETE
 - [x] Django project setup with Docker
@@ -302,23 +302,31 @@ CREATE INDEX idx_products_search ON products USING GIN(to_tsvector('english', na
 - [x] Redis distributed locking (15s timeout)
 - [x] 57 tests passing
 
-### Phase 4 (Weeks 10-12): Accounting Domain 🔲 In Progress
-- [ ] Chart of Accounts (hierarchical)
-- [ ] Journal Entries with balanced constraint
-- [ ] Invoices and Payments
-- [ ] GST Engine with F5 returns
+### Phase 4 (Weeks 10-12): Accounting Domain ✅ COMPLETE
+- [x] Chart of Accounts (hierarchical, 5 types)
+- [x] Journal Entries with DB-level balanced constraint
+- [x] Invoices with PEPPOL fields, lifecycle management
+- [x] Payments with gateway references
+- [x] GST Engine with historical rate lookup
+- [x] F5 return preparation and validation
+- [x] 91 tests passing
 
-### Phase 5 (Weeks 13-15): Compliance & Integrations
-- [ ] PDPA consent framework
-- [ ] PEPPOL/InvoiceNow
-- [ ] Payment gateway integration (Stripe, HitPay)
-- [ ] Logistics API (Ninja Van, SingPost)
+### Phase 5 (Weeks 13-15): Compliance & Integrations ✅ COMPLETE
+- [x] PDPA consent framework (6 consent types)
+- [x] Audit logging (7-year retention)
+- [x] Data access/deletion request handling
+- [x] PEPPOL/InvoiceNow (Zetta Solution AP)
+- [x] Payment gateways (Stripe primary, HitPay fallback)
+- [x] Logistics API (NinjaVan, SingPost)
+- [x] 97 tests passing
 
 ### Phase 6-8 (Weeks 16-28): Frontend & Launch
 - [ ] Next.js storefront
 - [ ] Checkout flow with PayNow
 - [ ] PWA implementation
 - [ ] Production deployment
+
+**Total Backend Tests: 370 passing**
 
 ---
 
