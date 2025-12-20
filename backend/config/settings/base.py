@@ -66,10 +66,11 @@ LOCAL_APPS = [
     'apps.commerce',
     'apps.inventory',
     'apps.accounting',
-    # Future apps:
-    # 'apps.compliance',
-    # 'apps.payments',
-    # 'apps.integrations',
+    # Phase 5 apps:
+    'apps.compliance',
+    'apps.payments',
+    'apps.integrations',
+    'apps.invoicenow',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

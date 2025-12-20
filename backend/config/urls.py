@@ -36,9 +36,11 @@ urlpatterns = [
         path('commerce/', include('apps.commerce.urls', namespace='commerce')),
         path('inventory/', include('apps.inventory.urls', namespace='inventory')),
         path('accounting/', include('apps.accounting.urls', namespace='accounting')),
-        # Future API endpoints:
-        # path('compliance/', include('apps.compliance.urls', namespace='compliance')),
-        # path('payments/', include('apps.payments.urls', namespace='payments')),
+        # Phase 5 apps:
+        path('compliance/', include('apps.compliance.urls', namespace='compliance')),
+        path('payments/', include('apps.payments.urls', namespace='payments')),
+        path('integrations/', include('apps.integrations.urls', namespace='integrations')),
+        path('invoicenow/', include('apps.invoicenow.urls', namespace='invoicenow')),
     ])),
     
     # API Documentation
