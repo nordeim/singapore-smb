@@ -118,22 +118,41 @@ class AuditService:
         
         Args:
             instance: The updated model instance
-            old_data: Previous field values
+            old_data: Previous field values (from .values() query)
             user: User who updated it
             ip_address: Request IP
             
         Returns:
             Created AuditLog or None if no changes
         """
+        import uuid as uuid_module
+        from decimal import Decimal
+        
+        def _serialize_value(val):
+            """Convert value to JSON-serializable type."""
+            if val is None:
+                return None
+            elif isinstance(val, uuid_module.UUID):
+                return str(val)
+            elif isinstance(val, Decimal):
+                return str(val)
+            elif hasattr(val, 'isoformat'):
+                return val.isoformat()
+            elif isinstance(val, (str, int, float, bool)):
+                return val
+            else:
+                return str(val)
+        
         new_values = AuditService._serialize_instance(instance)
         
-        # Calculate diff
+        # Calculate diff, serializing old values
         old_values = {}
         new_diff = {}
         for field, new_val in new_values.items():
             old_val = old_data.get(field)
-            if old_val != new_val:
-                old_values[field] = old_val
+            old_val_serialized = _serialize_value(old_val)
+            if old_val_serialized != new_val:
+                old_values[field] = old_val_serialized
                 new_diff[field] = new_val
         
         if not old_values:
@@ -226,8 +245,11 @@ class AuditService:
             instance: Model instance
             
         Returns:
-            Dict of field values
+            Dict of field values (JSON-serializable)
         """
+        import uuid as uuid_module
+        from decimal import Decimal
+        
         data = {}
         
         for field in instance._meta.get_fields():
@@ -244,10 +266,18 @@ class AuditService:
                 if field.many_to_one and value is not None:
                     value = str(value.pk) if hasattr(value, 'pk') else str(value)
                 
-                # Convert to JSON-serializable
-                if hasattr(value, 'isoformat'):
+                # Convert to JSON-serializable types
+                if value is None:
+                    pass  # None is JSON-serializable
+                elif isinstance(value, uuid_module.UUID):
+                    value = str(value)
+                elif isinstance(value, Decimal):
+                    value = str(value)
+                elif hasattr(value, 'isoformat'):
                     value = value.isoformat()
-                elif hasattr(value, '__str__') and not isinstance(value, (str, int, float, bool, type(None))):
+                elif isinstance(value, (str, int, float, bool)):
+                    pass  # Already JSON-serializable
+                elif hasattr(value, '__str__'):
                     value = str(value)
                 
                 data[field.name] = value
